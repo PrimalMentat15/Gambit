@@ -1,0 +1,8 @@
+# Monitor UI dependencies, deliberately separate from ai/requirements.txt so a
+# headless training machine never needs Qt installed.
+#
+# PySide6 is the official Qt for Python binding (LGPLv3). Plotting is pyqtgraph
+# (MIT) rather than Qt Charts / QtGraphs, which are GPL-3.0-or-commercial and
+# would be incompatible with this project's MIT license.
+PySide6>=6.6.0
+pyqtgraph>=0.13.0

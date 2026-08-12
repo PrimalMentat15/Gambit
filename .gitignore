@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+ai/venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Training artifacts (generated during RL training sessions)
+models/
+tensorboard_logs/
+training.log
+training_monitor.csv
+runs/
+
+# Other ML artifacts
+*.pth
+*.pt
+*.ckpt
+checkpoints/
+wandb/
+
+# Large reference files (don't commit decompiled game source)
+balatro-source-code/
+
+# Monitor artifacts
+*.png
+.monitor_layout.json
+monitor.json

@@ -1,0 +1,6 @@
+numpy>=1.21.0
+torch>=1.9.0  # For CUDA, install from the matching index, e.g. --index-url https://download.pytorch.org/whl/cu126
+gymnasium>=0.26.0  # For RL environment interface
+stable-baselines3[extra]>=1.6.0  # For RL algorithms
+sb3-contrib>=2.0.0  # For MaskablePPO and ActionMasker
+tensorboard>=2.8.0  # For training visualization
