@@ -150,8 +150,27 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_stream()
         elif self.path in ("/", "/index.html"):
             self._serve_page()
+        elif self.path in ("/icon.png", "/favicon.ico"):
+            self._serve_icon()
         else:
             self.send_error(404)
+
+    def _serve_icon(self) -> None:
+        from monitor.resources import ICON_PNG
+
+        try:
+            with open(ICON_PNG, "rb") as handle:
+                body = handle.read()
+        except OSError:
+            self.send_error(404)
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _serve_page(self) -> None:
         try:

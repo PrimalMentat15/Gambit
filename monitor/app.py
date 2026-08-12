@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from pyqtgraph.dockarea import Dock, DockArea
 
 from . import layout as layout_store
+from . import resources
 from . import theme
 from .bus import EventBus
 from .config import MonitorConfig
@@ -47,6 +48,7 @@ class MonitorWindow(QMainWindow):
         self.panels = build_panels(config)
 
         self.setWindowTitle("Gambit Monitor")
+        self.setWindowIcon(resources.app_icon())
         self.resize(1500, 950)
         self.setStyleSheet(
             f"QMainWindow {{ background: {theme.PAGE}; }}"
@@ -327,6 +329,16 @@ def main(argv=None) -> int:
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Gambit Monitor")
+    app.setWindowIcon(resources.app_icon())
+
+    # Without a distinct AppUserModelID, Windows groups the window under the
+    # generic python.exe taskbar entry and shows its icon instead of ours
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("gambit.monitor")
+        except Exception:
+            pass
 
     window = MonitorWindow(config)
     window.show()

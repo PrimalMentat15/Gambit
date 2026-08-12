@@ -75,7 +75,10 @@ wandb/
 # Large reference files (don't commit decompiled game source)
 balatro-source-code/
 
-# Monitor artifacts
+# Monitor artifacts (screenshots and previews)
 *.png
+# ...but the app icon is a real asset and must be committed
+!assets/*.png
+!assets/*.ico
 .monitor_layout.json
 monitor.json

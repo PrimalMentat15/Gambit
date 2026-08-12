@@ -104,6 +104,7 @@ python -m ai.tools.latency_report
 | `BALATRO_RL_PUMP` | off | Also pump card movement (measured regression) |
 | `BALATRO_RL_DIAG` | on | Sample which events block the queue |
 | `BALATRO_RL_VERBOSE_REWARD` | on | Print per-episode reward breakdowns |
+| `BALATRO_RL_AUTOSTART` | off | Start training without pressing `R`. Set per-process by the supervisor; exporting it globally would make every manual launch start training |
 
 ## Monitor
 
@@ -130,6 +131,52 @@ Colours come from a palette validated for colour-vision deficiency (worst
 adjacent pair ΔE 9.4, all slots ≥3:1 against the surface). Action colours are
 keyed to action id, so `PLAY_HAND` is the same hue in every panel.
 
+### Tabs
+
+| Tab | What it does |
+|---|---|
+| **Live** | Dockable panels: throughput, latency by action, latency over time, episode reward, win rate, game state, action distribution, event log |
+| **Control** | Launch a run (optionally starting Balatro too), watch process health, read trainer output |
+| **Analysis** | Compare runs on any TensorBoard metric, plus reward-component and hand-type tables. Reads event files directly — no TensorBoard server |
+| **Replays** | Browse saved winning games and step through their actions |
+
+### Starting and stopping runs
+
+The Control tab launches the trainer and Balatro. Children are spawned to outlive
+the monitor, so **closing the monitor leaves training running** and reopening it
+re-attaches by reading the run directory.
+
+Two toolbar buttons act on the same targets and differ only in cleanliness:
+
+| | Trainer | Balatro | Monitor |
+|---|---|---|---|
+| **Stop** (`Ctrl+.`) | checkpoints, exits at next step boundary | closes after | stays open |
+| **Kill** (`Ctrl+Shift+.`) | terminated immediately | terminated immediately | stays open |
+
+Stop is cooperative, so it cannot help when the trainer is wedged in a socket read
+waiting on the game — which is exactly why Kill is terminate-based. Kill also
+closes Balatro, since a half-dead pair holding port 12345 is what blocks the next
+run.
+
+Neither depends on the GUI:
+
+```bash
+python -m ai.tools.killrun --stop    # graceful
+python -m ai.tools.killrun --kill    # force
+```
+
+### Remote view
+
+```bash
+python -m monitor.web --host 0.0.0.0
+```
+
+A single self-contained page streaming live stats over Server-Sent Events, for
+checking a multi-hour run from your phone. Stdlib only — no dependency and no JS
+toolchain. Read-only by construction: no route writes, and the kill switch is
+deliberately not exposed over the network. Binds to localhost unless you pass
+`--host`.
+
 ## Tests
 
 No game required — each test stands up a fake Balatro client over the real socket,
@@ -137,8 +184,7 @@ and the monitor renders offscreen to a screenshot. See [tests/README.md](tests/R
 
 ## Future Work
 
-- Analysis and replay tabs; process supervisor with a kill switch
-- Optional remote web view for checking long runs away from the desk
+- Reconnect instead of exiting when Balatro closes mid-run
 - Training parallelization across multiple game instances
 - Expand beyond ante 1 (jokers, shop, blind selection)
 
