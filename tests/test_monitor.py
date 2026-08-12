@@ -153,6 +153,21 @@ def test_render(run_dir=None, out_path="monitor_preview.png"):
 
     print(f"fed {len(events)} events into {len(window.panels)} panels")
     print(f"screenshot: {out_path}")
+
+    # One screenshot per tab, so the non-Live views are actually looked at
+    # rather than merely constructed without raising
+    stem, ext = os.path.splitext(out_path)
+    for index in range(1, window.tabs.count()):
+        name = window.tabs.tabText(index).lower()
+        window.tabs.setCurrentIndex(index)
+        app.processEvents()
+        for _ in range(3):
+            app.processEvents()
+        path = f"{stem}_{name}{ext}"
+        window.grab().save(path)
+        print(f"screenshot: {path}")
+
+    window.tabs.setCurrentIndex(0)
     return out_path
 
 

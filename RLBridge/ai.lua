@@ -8,6 +8,7 @@ local output = require("output")
 local action = require("actions")
 local communication = require("communication")
 local utils = require("utils")
+local init = require("init")
 
 -- State management
 local last_combined_hash = nil
@@ -189,6 +190,16 @@ end
 function AI.init()
     communication.init()
 
+    -- Supervised launches set this so no keypress is needed. A manual launch
+    -- leaves it unset and the mod stays idle until R is pressed, which is what
+    -- keeps standalone Balatro playable.
+    if os.getenv("BALATRO_RL_AUTOSTART") == "1" then
+        rl_training_active = true
+        init.enable_fast_mode()
+        reset_timing()
+        utils.log_ai("\n\nRL Training STARTED (autostart)")
+    end
+
     -- Hook into Love2D keyboard events
     if love and love.keypressed then
         local original_keypressed = love.keypressed
@@ -213,6 +224,7 @@ function AI.update()
         if last_key_pressed == "r" then
             if not rl_training_active then
                 rl_training_active = true
+                init.enable_fast_mode()
                 reset_timing()
                 utils.log_ai("\n\nRL Training STARTED (R pressed)")
             end

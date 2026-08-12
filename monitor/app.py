@@ -17,8 +17,8 @@ import os
 import sys
 from typing import List, Optional
 
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QLabel, QMainWindow, QMessageBox, QStatusBar,
     QTabWidget, QToolBar,
@@ -31,6 +31,8 @@ from . import theme
 from .bus import EventBus
 from .config import MonitorConfig
 from .panels import build_panels
+from .supervisor import Supervisor
+from .tabs import AnalysisTab, ControlTab, ReplaysTab
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ai.telemetry import list_runs  # noqa: E402
@@ -64,9 +66,14 @@ class MonitorWindow(QMainWindow):
         self.bus.batch.connect(self._on_batch)
         self.bus.restarted.connect(self._on_restart)
 
+        self.supervisor = Supervisor(config, parent=self)
+        self.supervisor.attach_latest()
+        self.supervisor.changed.connect(self._on_supervisor_changed)
+
         self._build_toolbar()
         self._build_tabs()
         self._build_status()
+        self._on_supervisor_changed()
 
         # One timer for every panel
         self.redraw_timer = QTimer(self)
@@ -101,6 +108,27 @@ class MonitorWindow(QMainWindow):
         self.follow_action.setChecked(self.config.follow_latest)
         self.follow_action.toggled.connect(self._on_follow_toggled)
         bar.addAction(self.follow_action)
+
+        bar.addSeparator()
+
+        # Stop and Kill live in the toolbar rather than inside a tab: a kill
+        # switch you have to go looking for is not a kill switch. Both act on
+        # the same targets and differ only in whether the trainer is given the
+        # chance to checkpoint.
+        self.stop_action = QAction("Stop", self)
+        self.stop_action.setShortcut(QKeySequence("Ctrl+."))
+        self.stop_action.setToolTip("Checkpoint and exit at the next step boundary (Ctrl+.)")
+        self.stop_action.triggered.connect(self._on_stop)
+        bar.addAction(self.stop_action)
+
+        self.kill_action = QAction("Kill", self)
+        self.kill_action.setShortcut(QKeySequence("Ctrl+Shift+."))
+        self.kill_action.setToolTip(
+            "Terminate the trainer and Balatro immediately (Ctrl+Shift+.)\n"
+            "Hold Shift while clicking to skip the confirmation"
+        )
+        self.kill_action.triggered.connect(self._on_kill)
+        bar.addAction(self.kill_action)
 
         bar.addSeparator()
 
@@ -147,6 +175,13 @@ class MonitorWindow(QMainWindow):
             self.live_area.addDock(make_dock(self.panels[index]), "right", anchors[row])
 
         layout_store.load(self.live_area)
+
+        self.control_tab = ControlTab(self.supervisor, self.config)
+        self.analysis_tab = AnalysisTab(self.config)
+        self.replays_tab = ReplaysTab(self.config)
+        self.tabs.addTab(self.control_tab, "Control")
+        self.tabs.addTab(self.analysis_tab, "Analysis")
+        self.tabs.addTab(self.replays_tab, "Replays")
 
     def _build_status(self) -> None:
         self.status = QStatusBar()
@@ -214,6 +249,42 @@ class MonitorWindow(QMainWindow):
             f"run: {run}    events: {self.bus.total_events:,}    "
             f"{self.bus.events_per_sec:.1f}/s    redraw: {self.config.redraw_hz:g} Hz"
         )
+
+    # --- Stopping ---
+
+    def _on_supervisor_changed(self) -> None:
+        """Enable Stop/Kill only while something is actually running"""
+        running = self.supervisor.running
+        self.stop_action.setEnabled(running)
+        self.kill_action.setEnabled(running)
+
+    def _on_stop(self) -> None:
+        if not self.supervisor.stop():
+            self.status.showMessage("No run to stop", 3000)
+            return
+        self.status.showMessage(
+            "Stop requested - trainer will checkpoint and exit. "
+            "Use Kill if it is wedged waiting on Balatro.", 8000)
+
+    def _on_kill(self) -> None:
+        # Shift skips the prompt: in a genuine emergency, a dialog is friction
+        skip_prompt = QApplication.keyboardModifiers() & Qt.ShiftModifier
+        if not skip_prompt:
+            answer = QMessageBox.warning(
+                self, "Kill run",
+                "Terminate the trainer and Balatro immediately?\n\n"
+                "The in-flight rollout is lost. The last checkpoint and every "
+                "event already written are kept.",
+                QMessageBox.Cancel | QMessageBox.Yes,
+                QMessageBox.Cancel,
+            )
+            if answer != QMessageBox.Yes:
+                return
+
+        if self.supervisor.kill():
+            self.status.showMessage("Run killed", 5000)
+        else:
+            self.status.showMessage("Some processes could not be killed", 8000)
 
     # --- Layout ---
 

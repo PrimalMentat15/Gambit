@@ -46,6 +46,9 @@ def parse_args(argv=None):
     parser.add_argument("--no-prompt", action="store_true",
                         help="Skip the interactive prompt; required when supervised")
     parser.add_argument("--runs-dir", default="runs", help="Parent directory for run directories")
+    parser.add_argument("--run-dir", default=None,
+                        help="Use an existing run directory instead of creating one "
+                             "(the supervisor creates it so it knows the paths up front)")
     parser.add_argument("--resume", default=None, help="Path to a checkpoint to resume from")
     parser.add_argument("--no-resume", action="store_true",
                         help="Start fresh instead of resuming the latest checkpoint")
@@ -99,6 +102,32 @@ def get_device(explicit: Optional[str] = None):
     if device:
         return device
     return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+class StopRequestCallback(BaseCallback):
+    """
+    Ends training cleanly when a stop is requested
+
+    Returning False from _on_step makes SB3 leave learn() normally, so the
+    caller still saves a final checkpoint. Checked every few steps rather than
+    every step to keep it off the hot path.
+    """
+
+    def __init__(self, session: RunSession, every: int = 8, verbose: int = 0):
+        super().__init__(verbose)
+        self.session = session
+        self.every = every
+        self.stopped = False
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.every:
+            return True
+        if self.session.stop_requested():
+            self.stopped = True
+            emit(EventType.LOG, level="info", message="Stop requested; finishing cleanly")
+            print("\n🛑 Stop requested - saving and exiting cleanly...")
+            return False
+        return True
 
 
 class TelemetryCallback(BaseCallback):
@@ -184,8 +213,8 @@ def create_model(env, tb_dir: str = "./tensorboard_logs/", device: Optional[str]
     return model
 
 
-def create_callbacks(save_freq=1000, checkpoints_dir="./models/"):
-    """Create training callbacks for saving and evaluation"""
+def create_callbacks(save_freq=1000, checkpoints_dir="./models/", session=None):
+    """Create training callbacks for saving, telemetry and graceful stop"""
     callbacks = []
 
     # Checkpoint callback - save model periodically
@@ -198,6 +227,10 @@ def create_callbacks(save_freq=1000, checkpoints_dir="./models/"):
 
     # Telemetry callback - stream training stats to the monitor
     callbacks.append(TelemetryCallback())
+
+    # Graceful stop - lets the monitor or killrun end the run with a checkpoint
+    if session is not None:
+        callbacks.append(StopRequestCallback(session))
 
     return callbacks
 
@@ -267,7 +300,8 @@ def train_agent(session: RunSession, total_timesteps=DEFAULT_TIMESTEPS,
         if save_freq is None:
             save_freq = max(1000, total_timesteps // 20)
         callbacks = create_callbacks(save_freq=save_freq,
-                                     checkpoints_dir=session.checkpoints_dir)
+                                     checkpoints_dir=session.checkpoints_dir,
+                                     session=session)
 
         # Train the model
         logger.info("Starting training...")
@@ -286,9 +320,11 @@ def train_agent(session: RunSession, total_timesteps=DEFAULT_TIMESTEPS,
         model.save(save_path)
         logger.info(f"Model saved to {save_path}")
 
-        emit(EventType.SESSION_END, status="completed",
+        status = "stopped" if session.stop_requested() else "completed"
+        emit(EventType.SESSION_END, status=status,
              wall_time=round(training_time, 2), model_path=str(save_path))
-        session.mark_finished("completed")
+        session.mark_finished(status)
+        session.clear_stop()
 
         # Clean up environment
         cleanup_env(env)
@@ -364,22 +400,29 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Create the run directory first so logs and telemetry land inside it
-    session = RunSession.create(
-        name=args.run_name,
-        runs_dir=args.runs_dir,
-        config={
-            "total_timesteps": args.timesteps,
-            "device": get_device(args.device),
-            "algo": "MaskablePPO",
-            "policy": "MlpPolicy",
-            "learning_rate": 1e-4,
-            "n_steps": 4096,
-            "batch_size": 64,
-            "n_epochs": 10,
-            "gamma": 0.99,
-            "ent_coef": 0.01,
-        },
-    )
+    if args.run_dir:
+        session = RunSession.attach(args.run_dir)
+        session.update_meta(trainer_pid=os.getpid(), active=True)
+    else:
+        session = RunSession.create(
+            name=args.run_name,
+            runs_dir=args.runs_dir,
+            config={
+                "total_timesteps": args.timesteps,
+                "device": get_device(args.device),
+                "algo": "MaskablePPO",
+                "policy": "MlpPolicy",
+                "learning_rate": 1e-4,
+                "n_steps": 4096,
+                "batch_size": 64,
+                "n_epochs": 10,
+                "gamma": 0.99,
+                "ent_coef": 0.01,
+            },
+        )
+
+    # A stale stop file would end the run the moment it starts
+    session.clear_stop()
 
     setup_logging(os.path.join(session.run_dir, "training.log"))
     set_emitter(TelemetryEmitter(session.events_path))

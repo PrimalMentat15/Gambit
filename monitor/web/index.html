@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gambit — remote</title>
+<style>
+  /* Same validated dark palette as the desktop monitor, so the two read as one
+     system. Colours are declared as roles here and used by role below. */
+  :root {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --page: #0d0d0d;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --series-1: #3987e5;   /* SELECT_HAND */
+    --series-2: #d95926;   /* PLAY_HAND */
+    --series-3: #199e70;   /* DISCARD_HAND */
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    background: var(--page); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  #run { color: var(--muted); font-size: 12px; }
+  #live { font-size: 11px; color: var(--muted); margin-left: auto; }
+  #live.on { color: var(--good); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  .tile { background: var(--surface); border-radius: 5px; padding: 10px 12px; }
+  .tile .cap { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+  /* Proportional figures deliberately: tabular-nums makes large standalone
+     numbers look loose. Tabular is reserved for columns that align vertically. */
+  .tile .val { font-size: 22px; font-weight: 600; margin-top: 3px; }
+
+  section { margin-top: 16px; }
+  h2 { font-size: 10px; color: var(--muted); text-transform: uppercase;
+       letter-spacing: .5px; margin: 0 0 8px; font-weight: 600; }
+  .card { background: var(--surface); border-radius: 5px; padding: 12px; }
+
+  /* Bars are direct-labelled, so nothing depends on telling two hues apart */
+  .bar-row { display: grid; grid-template-columns: 104px 1fr auto; gap: 10px;
+             align-items: center; margin-bottom: 8px; font-size: 12px; }
+  .bar-row:last-child { margin-bottom: 0; }
+  .bar-name { color: var(--ink-2); }
+  .bar-track { background: var(--page); border-radius: 3px; height: 16px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width .3s ease; }
+  .bar-val { color: var(--ink-2); font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; }
+
+  .meter { background: var(--page); border-radius: 4px; height: 22px; position: relative; overflow: hidden; }
+  .meter-fill { height: 100%; background: var(--series-1); transition: width .3s ease; }
+  .meter-fill.done { background: var(--good); }
+  .meter-text { position: absolute; inset: 0; display: flex; align-items: center;
+                justify-content: center; font-size: 11px; color: var(--ink); }
+
+  svg { display: block; width: 100%; height: 130px; }
+  .empty { color: var(--muted); font-size: 12px; }
+  footer { margin-top: 18px; color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gambit</h1>
+  <span id="run">connecting…</span>
+  <span id="live">offline</span>
+</header>
+
+<div class="tiles">
+  <div class="tile"><div class="cap">steps / sec</div><div class="val" id="rate">--</div></div>
+  <div class="tile"><div class="cap">steps</div><div class="val" id="steps">--</div></div>
+  <div class="tile"><div class="cap">est. remaining</div><div class="val" id="eta">--</div></div>
+  <div class="tile"><div class="cap">win rate</div><div class="val" id="winrate">--</div></div>
+  <div class="tile"><div class="cap">episodes</div><div class="val" id="episodes">--</div></div>
+  <div class="tile"><div class="cap">mean reward</div><div class="val" id="reward">--</div></div>
+</div>
+
+<section>
+  <h2>Chips vs blind</h2>
+  <div class="card">
+    <div class="meter"><div class="meter-fill" id="chipfill" style="width:0%"></div>
+      <div class="meter-text" id="chiptext">--</div></div>
+    <div style="margin-top:10px;color:var(--ink-2);font-size:12px">
+      hands left <b id="hands">--</b> &nbsp;·&nbsp; discards left <b id="discards">--</b>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Mean wait by action</h2>
+  <div class="card" id="actions"><div class="empty">waiting for data…</div></div>
+</section>
+
+<section>
+  <h2>Recent episode reward</h2>
+  <div class="card"><svg id="spark" viewBox="0 0 600 130" preserveAspectRatio="none"></svg></div>
+</section>
+
+<footer>Read-only view. Starting, stopping and killing runs are not exposed here.</footer>
+
+<script>
+const ACTION_COLORS = {
+  SELECT_HAND: "var(--series-1)",
+  PLAY_HAND: "var(--series-2)",
+  DISCARD_HAND: "var(--series-3)",
+};
+
+function duration(s) {
+  if (!s || s <= 0) return "--";
+  if (s < 90) return Math.round(s) + "s";
+  if (s < 5400) return Math.round(s / 60) + "m";
+  if (s < 172800) return (s / 3600).toFixed(1) + "h";
+  return (s / 86400).toFixed(1) + "d";
+}
+
+function num(n) { return (n || 0).toLocaleString(); }
+
+function render(d) {
+  document.getElementById("run").textContent = d.run_id;
+  document.getElementById("rate").textContent = d.rate ? d.rate.toFixed(2) : "--";
+  document.getElementById("steps").textContent = num(d.steps);
+  document.getElementById("eta").textContent = duration(d.eta_seconds);
+  document.getElementById("episodes").textContent = num(d.episodes);
+  document.getElementById("reward").textContent = d.rewards.length ? d.mean_reward.toFixed(1) : "--";
+
+  const wr = document.getElementById("winrate");
+  wr.textContent = d.episodes ? d.win_rate.toFixed(1) + "%" : "--";
+  wr.style.color = !d.episodes ? "var(--ink)"
+    : d.win_rate >= 25 ? "var(--good)" : d.win_rate >= 5 ? "var(--warning)" : "var(--critical)";
+
+  const pct = d.blind_chips ? Math.min(100, d.chips / d.blind_chips * 100) : 0;
+  const fill = document.getElementById("chipfill");
+  fill.style.width = pct + "%";
+  fill.classList.toggle("done", pct >= 100);
+  document.getElementById("chiptext").textContent =
+    num(d.chips) + " / " + num(d.blind_chips) + "  (" + Math.round(pct) + "%)";
+  document.getElementById("hands").textContent = d.hands_left;
+  document.getElementById("discards").textContent = d.discards_left;
+
+  const box = document.getElementById("actions");
+  if (!d.actions.length) {
+    box.innerHTML = '<div class="empty">waiting for data…</div>';
+  } else {
+    const worst = Math.max(...d.actions.map(a => a.mean_ms), 1);
+    box.innerHTML = d.actions.map(a => `
+      <div class="bar-row">
+        <span class="bar-name">${a.name.replace("_HAND", "")}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${a.mean_ms / worst * 100}%;
+          background:${ACTION_COLORS[a.name] || "var(--series-1)"}"></span></span>
+        <span class="bar-val">${a.mean_ms.toFixed(0)} ms</span>
+      </div>`).join("");
+  }
+
+  sparkline(d.rewards);
+}
+
+function sparkline(values) {
+  const svg = document.getElementById("spark");
+  if (!values.length) { svg.innerHTML = ""; return; }
+
+  const W = 600, H = 130, PAD = 6;
+  const lo = Math.min(...values, 0), hi = Math.max(...values, 0);
+  const span = (hi - lo) || 1;
+  const x = i => PAD + i * (W - 2 * PAD) / Math.max(values.length - 1, 1);
+  const y = v => H - PAD - (v - lo) / span * (H - 2 * PAD);
+
+  const path = values.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
+  const zero = y(0).toFixed(1);
+
+  svg.innerHTML =
+    `<line x1="0" y1="${zero}" x2="${W}" y2="${zero}" stroke="var(--axis)" stroke-width="1"/>` +
+    `<path d="${path}" fill="none" stroke="var(--series-1)" stroke-width="2"
+       stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+}
+
+const badge = document.getElementById("live");
+const stream = new EventSource("/events");
+stream.onmessage = e => {
+  badge.textContent = "live";
+  badge.className = "on";
+  try { render(JSON.parse(e.data)); } catch (err) {}
+};
+stream.onerror = () => { badge.textContent = "reconnecting…"; badge.className = ""; };
+</script>
+</body>
+</html>

@@ -37,6 +37,8 @@ venv.bak/
 *.swp
 *.swo
 *~
+walkthrough.md
+CLAUDE.md
 
 # OS files
 .DS_Store

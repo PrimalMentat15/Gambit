@@ -28,6 +28,7 @@ DEFAULT_RUNS_DIR = "runs"
 META_FILENAME = "meta.json"
 EVENTS_FILENAME = "events.jsonl"
 MONITOR_FILENAME = "monitor.csv"
+STOP_FILENAME = "STOP"
 
 
 def _git_sha() -> Optional[str]:
@@ -138,6 +139,39 @@ class RunSession:
     @property
     def monitor_path(self) -> str:
         return os.path.join(self.run_dir, MONITOR_FILENAME)
+
+    @property
+    def stop_path(self) -> str:
+        return os.path.join(self.run_dir, STOP_FILENAME)
+
+    def request_stop(self, reason: str = "requested") -> None:
+        """
+        Ask the trainer to finish cleanly at the next step boundary
+
+        A file rather than a signal: Python on Windows will not interrupt a
+        thread blocked in a socket read, and the trainer spends nearly all of
+        its time blocked waiting for the game. The trainer notices this between
+        steps, so it works whenever the loop is still turning -- and when it is
+        not, that is precisely the case Kill exists for.
+        """
+        with open(self.stop_path, "w", encoding="utf-8") as handle:
+            handle.write(reason)
+
+    def stop_requested(self) -> bool:
+        """True if a graceful stop has been asked for"""
+        return os.path.exists(self.stop_path)
+
+    def clear_stop(self) -> None:
+        """Remove any stale stop request"""
+        try:
+            os.remove(self.stop_path)
+        except OSError:
+            pass
+
+    @classmethod
+    def attach(cls, run_dir: str) -> "RunSession":
+        """Wrap an existing run directory, e.g. one created by the supervisor"""
+        return cls(run_dir, os.path.basename(os.path.normpath(run_dir)))
 
     def read_meta(self) -> Dict[str, Any]:
         """Load meta.json, or an empty dict if unreadable"""
