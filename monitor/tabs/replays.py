@@ -51,8 +51,13 @@ class ReplaysTab(QWidget):
         layout.addLayout(header)
 
         splitter = QSplitter(Qt.Horizontal)
-        self.list_table = self._make_table(["#", "Chips", "Score", "Actions", "When"])
+        # Seed is stored per replay and is what makes a good game reproducible,
+        # so it belongs in the list rather than only in the JSON
+        self.list_table = self._make_table(
+            ["#", "Seed", "Chips", "Score", "Actions", "When"]
+        )
         self.list_table.currentCellChanged.connect(self._on_selected)
+        self.list_table.itemDoubleClicked.connect(self._on_double_click)
         self.action_table = self._make_table(["Step", "Action", "Params"])
         splitter.addWidget(self._wrap("Replays", self.list_table))
         splitter.addWidget(self._wrap("Actions", self.action_table))
@@ -113,18 +118,40 @@ class ReplaysTab(QWidget):
         self.list_table.setRowCount(len(self.replays))
         for row, replay in enumerate(self.replays):
             stamp = str(replay.get("timestamp", ""))[:19].replace("T", " ")
+            seed = str(replay.get("seed") or "-")
             values = [
                 str(row + 1),
+                seed,
                 f"{replay.get('chips', 0):,}",
                 f"{replay.get('score', 0):.1f}",
                 str(len(replay.get("actions") or [])),
                 stamp,
             ]
             for column, value in enumerate(values):
-                self.list_table.setItem(row, column, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                if column == 1:
+                    # Monospace so seeds are easy to read off and retype, and
+                    # selectable/copyable for replaying the run in-game
+                    font = item.font()
+                    font.setFamily("Consolas")
+                    item.setFont(font)
+                    item.setToolTip(f"Seed: {seed}\nDouble-click to copy")
+                self.list_table.setItem(row, column, item)
 
         if self.replays:
             self.list_table.setCurrentCell(0, 0)
+
+    def _on_double_click(self, item) -> None:
+        """Copy a seed to the clipboard so it can be pasted into Balatro"""
+        if item.column() != 1:
+            return
+        seed = item.text()
+        if not seed or seed == "-":
+            return
+
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(seed)
+        self.empty.setText(f"Copied seed {seed} to clipboard")
 
     def _on_selected(self, row: int, _c: int, _pr: int, _pc: int) -> None:
         if row < 0 or row >= len(self.replays):

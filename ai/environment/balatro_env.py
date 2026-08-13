@@ -90,7 +90,11 @@ class BalatroEnv(gym.Env):
         )
 
         # Initialize mappers
-        self.state_mapper = BalatroStateMapper(observation_size=self.OBSERVATION_SIZE, max_actions=self.MAX_ACTIONS)
+        self.state_mapper = BalatroStateMapper(
+            observation_size=self.OBSERVATION_SIZE,
+            max_actions=self.MAX_ACTIONS,
+            max_cards=self.MAX_CARDS,
+        )
         self.action_mapper = BalatroActionMapper(action_slices=slices)
     
     def reset(self, seed=None, options=None):
@@ -387,6 +391,11 @@ class BalatroEnv(gym.Env):
             empty_selection=self.action_mapper.last_was_empty,
             clamped_total=self.action_mapper.clamped_count,
             empty_total=self.action_mapper.empty_count,
+            # Hand size was previously only in the info dict, so it was invisible
+            # in recorded runs. hand_truncated flags a hand too big to encode.
+            hand_size=self.state_mapper.last_hand_size,
+            hand_truncated=self.state_mapper.last_hand_truncated,
+            truncated_total=self.state_mapper.truncated_hands,
         )
 
     def _emit_episode_end(self, outcome, game_state):

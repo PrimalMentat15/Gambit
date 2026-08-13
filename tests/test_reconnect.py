@@ -67,6 +67,53 @@ def test_clamping():
           f"{mapper.clamped_count} clamped, {mapper.empty_count} empty-filled")
 
 
+def test_observation_size_is_stable():
+    """
+    The observation stays its declared length at any hand size
+
+    Hand size is not a constant: jokers and vouchers change it, and consumables
+    like Cryptid insert copies straight into hand, which cardarea.lua does not
+    cap. Previously only a hand of exactly 0 or 8 produced a correctly-sized
+    observation; anything else silently violated the Box contract.
+    """
+    from ai.utils.mappers import BalatroStateMapper
+
+    mapper = BalatroStateMapper(observation_size=216, max_actions=3, max_cards=8)
+
+    def state(n):
+        card = {"base": {"nominal": 5, "value": "5"}, "highlighted": False,
+                "suit": "Hearts"}
+        return {
+            "game_state": {
+                "state": 1, "game_over": 0, "game_win": 0,
+                "round": {"hands_left": 4, "discards_left": 3},
+                "blind_chips": 300, "chips": 120,
+                "hand": {"cards": [dict(card) for _ in range(n)], "size": n,
+                         "highlighted_count": 0},
+                "current_hand": {"chips": 0, "mult": 0, "score": 0,
+                                 "handname": "None"},
+                "seed": "SEED",
+            },
+            "available_actions": [1],
+        }
+
+    # 100 covers the Cryptid-stockpile case, which is reachable in real play
+    for n in [0, 1, 3, 5, 7, 8, 9, 10, 20, 80, 100]:
+        obs = mapper.process_game_state(state(n))
+        assert obs.shape == (216,), f"hand {n} produced shape {obs.shape}"
+        expected_drop = max(0, n - 8)
+        assert mapper.last_hand_truncated == expected_drop, (
+            f"hand {n}: reported {mapper.last_hand_truncated} truncated, "
+            f"expected {expected_drop}")
+
+    # The safety net in process_game_state must never be what saves us
+    assert mapper.resized_observations == 0, (
+        "observation needed emergency resizing; the per-card padding is wrong")
+
+    print(f"observation size stable across hands 0-100 "
+          f"({mapper.truncated_hands} oversized hands truncated cleanly)")
+
+
 def test_reconnect_after_drop():
     """A client that drops and returns is picked up again"""
 
@@ -144,6 +191,7 @@ def test_accept_timeout_is_bounded():
 if __name__ == "__main__":
     print(f"reconnect timeout configured to {RECONNECT_TIMEOUT:.0f}s\n")
     test_clamping()
+    test_observation_size_is_stable()
     test_reconnect_after_drop()
     test_accept_timeout_is_bounded()
     print("\nALL RECONNECT TESTS PASSED")

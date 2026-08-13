@@ -81,9 +81,23 @@ class BalatroStateMapper:
     - Game state parsing
     - Observation space formatting
     """
-    def __init__(self, observation_size: int, max_actions: int):
+    # 1 highlighted + 5 suit one-hot + 14 value one-hot + 1 nominal
+    FEATURES_PER_CARD = 21
+
+    def __init__(self, observation_size: int, max_actions: int, max_cards: int = 8):
         self.observation_size = observation_size
         self.max_actions = max_actions
+
+        # How many cards the observation has room for. Passed in rather than
+        # hardcoded so it stays in step with the environment's action space.
+        self.max_cards = max_cards
+
+        # Hand-size telemetry. A hand larger than max_cards is encoded out and
+        # the remainder dropped, so this needs to be visible rather than silent.
+        self.last_hand_size = 0
+        self.last_hand_truncated = 0
+        self.truncated_hands = 0
+        self.resized_observations = 0
 
         # Logger
         self.logger = logging.getLogger(__name__)
@@ -118,6 +132,24 @@ class BalatroStateMapper:
         features.extend(self._extract_game_features(raw_state.get('game_state', {})))
         features.extend(self._extract_available_actions(raw_state.get('available_actions', [])))
 
+        # Last line of defence: the observation space is declared as a fixed
+        # Box, so anything else is a silent contract violation that would either
+        # crash deep inside SB3 or feed the policy misaligned features. The
+        # per-card padding above should make this unreachable, so a hit here is
+        # a bug worth surfacing rather than quietly tolerating.
+        if len(features) != self.observation_size:
+            self.resized_observations += 1
+            self.logger.error(
+                f"Observation was {len(features)} features, expected "
+                f"{self.observation_size}; padding/truncating. This means a "
+                f"feature extractor changed size without observation_size "
+                f"being updated."
+            )
+            if len(features) < self.observation_size:
+                features.extend([0.0] * (self.observation_size - len(features)))
+            else:
+                features = features[:self.observation_size]
+
         return np.array(features, dtype=np.float32)
     
     def _extract_available_actions(self, available_actions: List[int]) -> List[float]:
@@ -147,15 +179,24 @@ class BalatroStateMapper:
             Fixed-size list of hand features
         """
         features = []
-        
+
         cards = hand.get('cards', [])
 
-        NON_CARDS_FEATURES = 2 # TODO Update this if we add more non-card features
+        # Hand size is a runtime value, not a constant. It grows with jokers and
+        # vouchers, and consumables such as Cryptid insert copies directly into
+        # hand -- cardarea.lua only auto-expands card_limit for the deck, so a
+        # hand can hold far more than its nominal limit. Anything beyond
+        # max_cards is encoded out here; the tail is dropped rather than allowed
+        # to change the observation length.
+        self.last_hand_size = len(cards)
+        self.last_hand_truncated = max(0, len(cards) - self.max_cards)
+        if self.last_hand_truncated:
+            self.truncated_hands += 1
+
         features.append(float(hand.get('size', 0)))
         features.append(float(hand.get('highlighted_count', 0)))
-        
-        
-        for card in cards:
+
+        for card in cards[:self.max_cards]:
             card_features = []
             card_features.append(float(card.get('highlighted', False)))
             
@@ -177,15 +218,16 @@ class BalatroStateMapper:
             card_features.append(base.get('nominal', 0.0))
 
             features.extend(card_features)
-        
-        # Pad or truncate to fixed size 
-        max_cards = 8  # TODO this might have to be updated in future if we go bigger Standard Balatro hand size
-        features_per_card = 21  # 1+5+14+1 = highlighted+suit_onehot+value_onehot+nominal
-        
-        # If no cards in hand, pad with zeros
-        if len(features) == NON_CARDS_FEATURES:
-            features.extend([0.0] * (max_cards * features_per_card))
-        
+
+        # Pad the card block out to max_cards so the observation is the same
+        # length whatever the hand holds. Previously only a completely empty
+        # hand was padded, so any size other than 0 or max_cards silently
+        # produced a wrongly-sized observation.
+        encoded = min(len(cards), self.max_cards)
+        missing = (self.max_cards - encoded) * self.FEATURES_PER_CARD
+        if missing:
+            features.extend([0.0] * missing)
+
         return features
     
     def _extract_game_features(self, state: Dict[str, Any]) -> List[float]:
