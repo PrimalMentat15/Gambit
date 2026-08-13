@@ -296,6 +296,9 @@ class BalatroActionMapper:
     MIN_CARDS = 1
     MAX_SELECTED_CARDS = 5
 
+    # Action id from RLBridge/actions.lua; the only one that takes card params
+    SELECT_HAND = 1
+
     def __init__(self, action_slices: Dict[str, slice]):
         self.slices = action_slices
 
@@ -325,22 +328,33 @@ class BalatroActionMapper:
             JSON response formatted for Balatro mod
         """
         ai_action = rl_action[self.slices["action_selection"]].tolist()[0]
-        
+
         # Map AI indices to Balatro action IDs: 0->1, 1->2, 2->3
         ai_to_balatro_mapping = {0: 1, 1: 2, 2: 3}  # SELECT_HAND, PLAY_HAND, DISCARD_HAND
-        balatro_action_id = ai_to_balatro_mapping.get(ai_action, 1)  # Default to SELECT_HAND
-        
+        balatro_action_id = ai_to_balatro_mapping.get(ai_action, self.SELECT_HAND)
+
+        # Only SELECT_HAND consumes card indices. play_hand() and discard_hand()
+        # in RLBridge/input.lua take no arguments -- they act on whatever is
+        # already highlighted -- and the action mask forces the card bits to 0
+        # on those steps anyway. Extracting params there would read that as an
+        # empty selection and fabricate a card the mod immediately discards.
+        if balatro_action_id == self.SELECT_HAND:
+            params = self._extract_select_hand_params(rl_action)
+        else:
+            params = []
+            self.last_dropped = 0
+            self.last_was_empty = False
+
         response_data = {
             "action": balatro_action_id,
-            "params": self._extract_select_hand_params(rl_action),
+            "params": params,
         }
-        self.response_validator.validate_response(response_data)
 
         # Validate action structure
         try:
             self.response_validator.validate_response(response_data)
         except ValueError as e:
-            self.logger.error(f"Invalid game state: {e}")
+            self.logger.error(f"Invalid response: {e}")
 
         return response_data
 
