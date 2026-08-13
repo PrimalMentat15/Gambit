@@ -14,6 +14,8 @@ venv/Scripts/python.exe tests/test_telemetry.py
 | `test_comm.py` | Socket round trip, disconnect detection, automatic re-accept on reconnect |
 | `test_e2e.py` | Real `BalatroEnv` driven by a fake game with a simulated 480 ms delay; asserts the latency breakdown is captured and that Python overhead stays under 5 ms/step |
 | `test_monitor.py` | Tail reader (incremental reads, partial lines, split UTF-8, restart detection), panel discovery, and an offscreen render of the real window to a PNG |
+| `test_supervisor.py` | Kill switch against a process that ignores SIGINT, re-attach from `meta.json`, concurrent web-view readers, and analysis over a real run |
+| `test_reconnect.py` | Card-selection clamping (0 and 6-8 both become legal), reconnect after the game is closed and relaunched, and a bounded accept that times out rather than hanging |
 
 `test_comm.py` and `test_e2e.py` bind ports 12399 and 12455, so stop any running
 trainer first.

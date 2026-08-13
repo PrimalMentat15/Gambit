@@ -8,9 +8,17 @@ RL libraries that expect gym-style step()/reset() methods.
 import numpy as np
 from typing import Dict, Any, Tuple, List, Optional
 import logging
+import os
 import time
 import gymnasium as gym
 from gymnasium import spaces
+
+# How long reset() waits for Balatro to (re)connect before giving up. Closing the
+# game mid-run used to kill the trainer outright; relaunching it now resumes.
+RECONNECT_TIMEOUT = float(os.environ.get("BALATRO_RL_RECONNECT_TIMEOUT", "300"))
+
+# How long each individual accept() waits, so the deadline is checked regularly
+RECONNECT_POLL = 5.0
 
 from ..utils.communication import BalatroSocketIO
 from .reward import BalatroRewardCalculator
@@ -111,9 +119,12 @@ class BalatroEnv(gym.Env):
         self.reward_calculator.reset()
         
         # Wait for initial request from Balatro (game start)
-        initial_request = self.pipe_io.wait_for_request()
+        initial_request = self._await_initial_request()
         if not initial_request:
-            raise RuntimeError("Failed to receive initial request from Balatro")
+            raise RuntimeError(
+                f"Failed to receive initial request from Balatro after "
+                f"{RECONNECT_TIMEOUT:.0f}s. Is the game running with the mod loaded?"
+            )
 
         # Process initial state for SB3
         self.current_state = initial_request
@@ -126,6 +137,47 @@ class BalatroEnv(gym.Env):
         
         return initial_observation, {}
     
+    def _await_initial_request(self):
+        """
+        Wait for Balatro, tolerating the game being closed and relaunched
+
+        A multi-hour run should survive the game crashing or being restarted, so
+        this retries until a deadline rather than failing on the first missing
+        request. Bounded rather than infinite: a game that is never coming back
+        should surface as an error instead of hanging silently.
+
+        Returns:
+            The initial request dict, or None if the deadline passed
+        """
+        deadline = time.time() + RECONNECT_TIMEOUT
+        attempt = 0
+
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                emit(EventType.COMM, event="reconnect_timeout",
+                     waited=round(RECONNECT_TIMEOUT, 1), attempts=attempt)
+                return None
+
+            request = self.pipe_io.wait_for_request(
+                accept_timeout=min(RECONNECT_POLL, remaining)
+            )
+            if request:
+                if attempt:
+                    self.logger.info("Balatro reconnected; resuming")
+                    emit(EventType.COMM, event="reconnected", attempts=attempt)
+                return request
+
+            attempt += 1
+            if attempt == 1:
+                self.logger.warning(
+                    "Balatro is not connected. Waiting up to "
+                    f"{RECONNECT_TIMEOUT:.0f}s for it to (re)connect - "
+                    "relaunching the game will resume this run."
+                )
+                emit(EventType.COMM, event="awaiting_reconnect",
+                     timeout=round(RECONNECT_TIMEOUT, 1))
+
     def step(self, action):
         """
         Take an action in the Balatro environment
@@ -294,6 +346,8 @@ class BalatroEnv(gym.Env):
             'state': game_state.get('state'),
             'available_actions': request.get('available_actions', []),
             'reward_components': self.reward_calculator.last_breakdown,
+            'cards_dropped': self.action_mapper.last_dropped,
+            'empty_selection': self.action_mapper.last_was_empty,
         }
         if outcome:
             info['outcome'] = outcome
@@ -327,6 +381,12 @@ class BalatroEnv(gym.Env):
             reward_components=self.reward_calculator.last_breakdown,
             timings={k: round(v, 6) for k, v in timings.items()},
             game_timing=request.get('timing', {}),
+            # Illegal selections projected into legal ones. These should trend
+            # towards zero if the policy is learning the 5-card limit.
+            cards_dropped=self.action_mapper.last_dropped,
+            empty_selection=self.action_mapper.last_was_empty,
+            clamped_total=self.action_mapper.clamped_count,
+            empty_total=self.action_mapper.empty_count,
         )
 
     def _emit_episode_end(self, outcome, game_state):

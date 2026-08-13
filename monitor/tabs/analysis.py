@@ -12,7 +12,7 @@ import os
 from typing import Dict, List
 
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 from PySide6.QtWidgets import (
     QComboBox, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget,
     QListWidgetItem, QPushButton, QSplitter, QTableWidget, QTableWidgetItem,
@@ -33,6 +33,37 @@ COMPARE_TAGS = [
 ]
 
 
+class SummarySignals(QObject):
+    """Signals for the summary worker (QRunnable cannot define its own)"""
+
+    done = Signal(str, dict)
+    failed = Signal(str, str)
+
+
+class SummaryWorker(QRunnable):
+    """
+    Reads and aggregates one run off the GUI thread
+
+    summarize_run walks the entire event stream: ~0.34s for a 30k-step run, so
+    roughly 20s for a multi-hour one. On the GUI thread that is a frozen window,
+    which is why this is a worker rather than a direct call.
+    """
+
+    def __init__(self, run_dir: str):
+        super().__init__()
+        self.run_dir = run_dir
+        self.signals = SummarySignals()
+
+    def run(self) -> None:
+        try:
+            summary = analysis.summarize_run(self.run_dir)
+            scalars = analysis.load_scalars(self.run_dir)
+            summary["_scalars"] = scalars
+            self.signals.done.emit(self.run_dir, summary)
+        except Exception as exc:  # a bad run must not take down the UI
+            self.signals.failed.emit(self.run_dir, str(exc))
+
+
 class AnalysisTab(QWidget):
     """Run comparison and reward diagnostics"""
 
@@ -40,6 +71,8 @@ class AnalysisTab(QWidget):
         super().__init__(parent)
         self.config = config
         self.summaries: Dict[str, dict] = {}
+        self.pool = QThreadPool(self)
+        self.pending: set = set()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -188,18 +221,48 @@ class AnalysisTab(QWidget):
             self.run_list.setCurrentRow(0)
             self.run_list.item(0).setCheckState(Qt.Checked)
 
-    def _summary_for(self, run_dir: str) -> dict:
-        """Summaries are cached: a long run's event file is expensive to re-read"""
-        if run_dir not in self.summaries:
-            self.summaries[run_dir] = analysis.summarize_run(run_dir)
-        return self.summaries[run_dir]
-
     def _on_run_selected(self, current, _previous) -> None:
+        """Show a cached summary, or kick off a background read"""
         if current is None:
             return
         run_dir = current.data(Qt.UserRole)
-        summary = self._summary_for(run_dir)
 
+        if run_dir in self.summaries:
+            self._show_summary(run_dir, self.summaries[run_dir])
+            return
+
+        for tile in self.tiles.values():
+            tile.set_value("...")
+        self.components.setRowCount(0)
+        self.hands.setRowCount(0)
+
+        if run_dir in self.pending:
+            return
+        self.pending.add(run_dir)
+
+        worker = SummaryWorker(run_dir)
+        worker.signals.done.connect(self._on_summary_ready)
+        worker.signals.failed.connect(self._on_summary_failed)
+        self.pool.start(worker)
+
+    def _on_summary_ready(self, run_dir: str, summary: dict) -> None:
+        self.pending.discard(run_dir)
+        self.summaries[run_dir] = summary
+
+        # Only paint if this is still the run the user is looking at
+        current = self.run_list.currentItem()
+        if current is not None and current.data(Qt.UserRole) == run_dir:
+            self._show_summary(run_dir, summary)
+        self._redraw_compare()
+
+    def _on_summary_failed(self, run_dir: str, message: str) -> None:
+        self.pending.discard(run_dir)
+        current = self.run_list.currentItem()
+        if current is not None and current.data(Qt.UserRole) == run_dir:
+            for tile in self.tiles.values():
+                tile.set_value("--")
+
+    def _show_summary(self, run_dir: str, summary: dict) -> None:
         for key, value in analysis.headline(summary).items():
             if key in self.tiles:
                 self.tiles[key].set_value(value)
@@ -237,8 +300,18 @@ class AnalysisTab(QWidget):
         # Colour by position in the ticked list, capped at the palette length --
         # a ninth run folds onto the last slot rather than inventing a hue
         for index, (name, run_dir) in enumerate(self._checked_runs()):
-            scalars = analysis.load_scalars(run_dir)
-            points = scalars.get(tag)
+            summary = self.summaries.get(run_dir)
+            if summary is None:
+                # Not read yet; the worker will call back and redraw
+                if run_dir not in self.pending:
+                    self.pending.add(run_dir)
+                    worker = SummaryWorker(run_dir)
+                    worker.signals.done.connect(self._on_summary_ready)
+                    worker.signals.failed.connect(self._on_summary_failed)
+                    self.pool.start(worker)
+                continue
+
+            points = (summary.get("_scalars") or {}).get(tag)
             if not points:
                 continue
             xs = [p[0] for p in points]

@@ -126,14 +126,43 @@ def main(argv=None) -> int:
     print(f"  {'TOTAL per step':<20} {total_stats['mean'] * 1000:>8.1f} "
           f"{total_stats['p50'] * 1000:>8.1f} {total_stats['p95'] * 1000:>8.1f} "
           f"{total_stats['max'] * 1000:>9.1f}")
-    print(f"\n  Throughput: {1.0 / grand_mean:.2f} steps/sec  "
-          f"({grand_mean * 1000:.0f} ms/step)")
+    # Two different rates, both real. The per-step figure is what the stage
+    # breakdown above sums to; the wall-clock figure includes episode resets and
+    # seed transitions, so it is the one that predicts how long a run takes.
+    print(f"\n  Per-step rate:   {1.0 / grand_mean:.2f} steps/sec  "
+          f"({grand_mean * 1000:.0f} ms/step, excludes resets)")
+
+    wall = wall_clock_rate(events)
+    if wall:
+        rate, span = wall
+        print(f"  Wall-clock rate: {rate:.2f} steps/sec  "
+              f"(over {span / 60:.1f} min, includes resets between episodes)")
 
     report_distribution(stages.get("t_wait") or [])
     report_by_action(events)
     report_game_side(events)
     report_verdict(stages, grand_mean)
     return 0
+
+
+def wall_clock_rate(events: List[dict]):
+    """
+    True end-to-end step rate, including everything between steps
+
+    The stage breakdown only accounts for time inside a step. Episode resets and
+    the game starting a new seed happen between them, so this is always the lower
+    and more honest number for estimating how long a run will take.
+
+    Returns:
+        (steps_per_second, elapsed_seconds), or None if unknown
+    """
+    stamps = [e["t"] for e in events if e.get("t")]
+    if len(stamps) < 2:
+        return None
+    span = max(stamps) - min(stamps)
+    if span <= 0:
+        return None
+    return (len(stamps) - 1) / span, span
 
 
 def report_distribution(waits: List[float]) -> None:

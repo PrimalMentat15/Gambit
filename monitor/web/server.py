@@ -18,6 +18,7 @@ import json
 import os
 import socket
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
@@ -31,13 +32,37 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 class State:
-    """Rolling summary of the active run, rebuilt as events arrive"""
+    """
+    Rolling summary of the active run, rebuilt as events arrive
+
+    One instance is shared by every connected viewer, since ThreadingHTTPServer
+    runs each connection on its own thread. Reads are serialised and the result
+    cached briefly, so N viewers cost one file read rather than N -- and, more
+    importantly, two threads cannot interleave inside the same TailReader and
+    corrupt its offset and partial-line buffer.
+    """
+
+    # How long a snapshot is reused before the file is polled again
+    CACHE_TTL = 0.5
 
     def __init__(self, runs_dir: str):
         self.runs_dir = runs_dir
         self.run_id: Optional[str] = None
         self.reader: Optional[TailReader] = None
+        self._lock = threading.Lock()
+        self._cached: Optional[dict] = None
+        self._cached_at = 0.0
         self.reset()
+
+    def snapshot_cached(self) -> dict:
+        """Poll and summarise, reusing a recent result across concurrent viewers"""
+        with self._lock:
+            now = time.monotonic()
+            if self._cached is None or now - self._cached_at >= self.CACHE_TTL:
+                self.poll()
+                self._cached = self.snapshot()
+                self._cached_at = now
+            return self._cached
 
     def reset(self) -> None:
         self.steps = 0
@@ -195,8 +220,7 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             while True:
-                self.state.poll()
-                payload = json.dumps(self.state.snapshot())
+                payload = json.dumps(self.state.snapshot_cached())
                 self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
                 self.wfile.flush()
                 time.sleep(1.0)

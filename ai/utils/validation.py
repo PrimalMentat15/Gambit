@@ -5,9 +5,6 @@ Validates game state structure and content
 
 from typing import Dict, Any, List
 
-from numpy import inner
-
-
 
 class GameStateValidator:
     """

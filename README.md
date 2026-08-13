@@ -88,6 +88,15 @@ gives a measured **4.6x** speedup:
 Pumping card movement as well (`BALATRO_RL_PUMP`) was measured as a **regression**
 (114 ms/step, one step reaching 13 s) and is off by default.
 
+Separately, **15.3% of steps used to be discarded outright**. The action space is
+8 independent binary bits, so the policy could select 6–8 cards, but Balatro caps
+hand selection at 5 and the mod rejected anything outside 1–5 — burning the whole
+step. A MultiDiscrete action mask is per-dimension and cannot express "at most 5
+of 8", so the constraint is enforced in `BalatroActionMapper` instead: selections
+are clamped to 5 and empty ones fall back to a single card. The `cards_dropped`
+and `empty_selection` counters on each `step` event show whether the policy is
+learning the limit on its own.
+
 Inspect any run with:
 
 ```bash
@@ -105,6 +114,7 @@ python -m ai.tools.latency_report
 | `BALATRO_RL_DIAG` | on | Sample which events block the queue |
 | `BALATRO_RL_VERBOSE_REWARD` | on | Print per-episode reward breakdowns |
 | `BALATRO_RL_AUTOSTART` | off | Start training without pressing `R`. Set per-process by the supervisor; exporting it globally would make every manual launch start training |
+| `BALATRO_RL_RECONNECT_TIMEOUT` | `300` | Seconds `reset()` waits for Balatro to reconnect before giving up, so closing the game mid-run no longer kills the trainer |
 
 ## Monitor
 

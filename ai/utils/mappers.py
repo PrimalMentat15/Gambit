@@ -284,18 +284,31 @@ class BalatroStateMapper:
 class BalatroActionMapper:
     """
     Converts RL actions to Balatro command JSON.
-    
+
     Handles:
     - Binary action conversion to card indices
     - Action validation
     - JSON response formatting
     """
-    
+
+    # Balatro highlights at most 5 cards (cardarea.lua highlighted_limit), and
+    # RLBridge/input.lua rejects anything outside 1-5 outright.
+    MIN_CARDS = 1
+    MAX_SELECTED_CARDS = 5
+
     def __init__(self, action_slices: Dict[str, slice]):
         self.slices = action_slices
 
         # Validator
         self.response_validator = ResponseValidator()
+
+        # Counts of actions the game would have rejected, projected into legal
+        # ones. Read by the environment for telemetry: if the policy is learning
+        # the constraint these should fall towards zero.
+        self.clamped_count = 0
+        self.empty_count = 0
+        self.last_dropped = 0
+        self.last_was_empty = False
 
         # Logger
         self.logger = logging.getLogger(__name__)
@@ -335,12 +348,39 @@ class BalatroActionMapper:
         """
         Converts the raw action to a list of Lua card indices
 
+        The action space is 8 independent binary bits, so the policy can select
+        any number of cards, but Balatro accepts only 1-5. A MultiDiscrete action
+        mask is per-dimension and cannot express "at most 5 of 8", so the
+        constraint is enforced here instead: over-long selections are truncated
+        and empty ones fall back to a single card.
+
+        This is action projection -- what gets executed differs from what was
+        sampled -- which slightly muddies credit assignment. The alternative was
+        worse: previously these actions were rejected by the mod and the whole
+        env step was wasted, which accounted for 15% of all steps.
+
         Args:
             raw_action: The whole action from the RL agent
         Returns:
-            List of 1-based card indices for Lua
+            List of 1-based card indices for Lua, always between 1 and 5 long
         """
         card_indices = raw_action[self.slices["card_indices"]]
-        return [i + 1 for i, val in enumerate(card_indices) if val == 1]
+        selected = [i + 1 for i, val in enumerate(card_indices) if val == 1]
+
+        self.last_dropped = 0
+        self.last_was_empty = False
+
+        if len(selected) > self.MAX_SELECTED_CARDS:
+            self.last_dropped = len(selected) - self.MAX_SELECTED_CARDS
+            self.clamped_count += 1
+            selected = selected[:self.MAX_SELECTED_CARDS]
+        elif not selected:
+            # No bits set: there is nothing to truncate, so pick the first card
+            # rather than send a selection the mod will reject
+            self.last_was_empty = True
+            self.empty_count += 1
+            selected = [1]
+
+        return selected
 
 

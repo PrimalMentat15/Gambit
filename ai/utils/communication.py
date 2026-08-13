@@ -74,12 +74,21 @@ class BalatroSocketIO:
             self.cleanup()
             raise RuntimeError(f"Could not start communication server: {e}")
 
-    def accept_connection(self) -> None:
+    def accept_connection(self, timeout: Optional[float] = None) -> None:
         """
-        Block until the Balatro mod connects
+        Wait for the Balatro mod to connect
 
         Replaces any previous connection. Disables Nagle so the
         request/response ping-pong is not delayed.
+
+        Args:
+            timeout: Seconds to wait, or None to block indefinitely. A bounded
+                wait is what lets a mid-run disconnect be retried rather than
+                hanging forever on a game that is never coming back.
+
+        Raises:
+            TimeoutError: If no connection arrived within the timeout
+            RuntimeError: If accepting failed for any other reason
         """
         self.close_client()
 
@@ -87,21 +96,33 @@ class BalatroSocketIO:
             self.logger.info("🔧 Waiting for Balatro to connect...")
             self.logger.info("   Press 'R' in Balatro now to activate RL training!")
 
-            self.client, addr = self.server.accept()
+            self.server.settimeout(timeout)
+            try:
+                self.client, addr = self.server.accept()
+            finally:
+                # Leave the listening socket blocking for any other caller
+                self.server.settimeout(None)
             self.client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.reader = self.client.makefile("r", encoding="utf-8", newline="\n")
             self.writer = self.client.makefile("w", encoding="utf-8", newline="\n")
 
             self.logger.info(f"Balatro connected from {addr[0]}:{addr[1]}")
             emit(EventType.COMM, event="connected", peer=f"{addr[0]}:{addr[1]}")
+        except socket.timeout:
+            # Distinct from a real failure: the caller may want to retry
+            self.close_client()
+            raise TimeoutError(f"No Balatro connection within {timeout}s")
         except Exception as e:
             self.logger.error(f"Failed to accept connection: {e}")
             self.close_client()
             raise RuntimeError(f"Could not accept Balatro connection: {e}")
 
-    def ensure_connected(self) -> bool:
+    def ensure_connected(self, timeout: Optional[float] = None) -> bool:
         """
         Re-accept a connection if the previous one was dropped
+
+        Args:
+            timeout: Seconds to wait for a new connection, None to block
 
         Returns:
             True if a live connection is available
@@ -110,21 +131,24 @@ class BalatroSocketIO:
             return True
 
         try:
-            self.accept_connection()
+            self.accept_connection(timeout=timeout)
             return True
         except Exception:
             return False
 
-    def wait_for_request(self) -> Optional[Dict[str, Any]]:
+    def wait_for_request(self, accept_timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
         """
         Wait for a new request from the Balatro mod
 
         Blocks until Balatro writes a request to the socket.
 
+        Args:
+            accept_timeout: If a reconnection is needed, how long to wait for it
+
         Returns:
             Parsed JSON request data, or None on disconnect/error
         """
-        if not self.ensure_connected():
+        if not self.ensure_connected(timeout=accept_timeout):
             return None
 
         try:

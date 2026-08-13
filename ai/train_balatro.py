@@ -13,6 +13,20 @@ Requirements:
     - Balatro game running with RLBridge mod
 """
 
+import sys
+
+# Windows picks the system codepage (cp1252 here) for stdout/stderr whenever
+# they are not a real console -- e.g. redirected to a file by the monitor's
+# supervisor. Reconfigure to UTF-8 before anything else runs (including the SB3/
+# gymnasium imports below, which can print their own warnings on import), since
+# several modules in this process (reward.py, communication.py) print emoji.
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 import argparse
 import logging
 import os
@@ -63,7 +77,7 @@ def setup_logging(log_path: str = "training.log"):
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_path),
+            logging.FileHandler(log_path, encoding="utf-8"),
             logging.StreamHandler()
         ]
     )

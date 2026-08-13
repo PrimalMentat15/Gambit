@@ -136,10 +136,55 @@ def test_analysis():
     print(f"monitor.csv rows: {len(rows)}")
 
 
+def test_web_state_concurrency():
+    """Concurrent viewers share one reader without corrupting it"""
+    import json as _json
+    import threading
+
+    from monitor.web.server import State
+
+    tmp = tempfile.mkdtemp()
+    runs = os.path.join(tmp, "runs")
+    session = RunSession.create(name="webstate", runs_dir=runs)
+
+    with open(session.events_path, "w", encoding="utf-8") as handle:
+        for i in range(500):
+            handle.write(_json.dumps({
+                "v": 1, "seq": i, "t": 1000 + i * 0.1, "type": "step",
+                "data": {"action": 1, "chips": i, "blind_chips": 300,
+                         "timings": {"t_wait": 0.05}},
+            }) + "\n")
+
+    state = State(runs)
+    results = []
+    errors = []
+
+    def viewer():
+        try:
+            for _ in range(20):
+                results.append(state.snapshot_cached()["steps"])
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=viewer) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=20)
+
+    assert not errors, f"concurrent access raised: {errors[:3]}"
+    # A corrupted shared reader shows up as counts going backwards
+    assert results == sorted(results), "step counts regressed under concurrency"
+    assert max(results) == 500, f"expected all 500 events, saw {max(results)}"
+    print(f"web state concurrency OK: 8 viewers x 20 reads, "
+          f"max steps {max(results)}, monotonic, no errors")
+
+
 if __name__ == "__main__":
     test_stop_file()
     test_kill_unresponsive_process()
     test_kill_missing_pid()
     test_attach_and_discovery()
+    test_web_state_concurrency()
     test_analysis()
     print("\nALL SUPERVISOR TESTS PASSED")
