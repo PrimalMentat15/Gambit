@@ -66,16 +66,27 @@ class BalatroEnv(gym.Env):
         # Action Spaces; This should describe the type and shape of the action
         # Constants - Core gameplay actions only (SELECT_HAND=1, PLAY_HAND=2, DISCARD_HAND=3)
         self.MAX_ACTIONS = 3
-        self.MAX_CARDS = 8  # Max cards in hand
+        self.MAX_CARDS = 8  # Hand slots the observation and actions address
+        self.MAX_PICKS = 5  # Balatro's highlighted_limit; a hand is 1-5 cards
+        self.MIN_PICKS = 1  # input.lua rejects an empty selection
+        self.STOP_INDEX = self.MAX_CARDS  # card slot value meaning "stop picking"
+
+        # Autoregressive selection: one action-type choice followed by up to
+        # MAX_PICKS card choices, each of which may instead be STOP. The policy
+        # masks each pick against the cards already taken, so an illegal
+        # selection (too many cards, duplicates, or none) cannot be represented.
+        # The previous space was MAX_CARDS independent binary bits, which could
+        # express selections the game rejects and required clamping after the
+        # fact on 58.5% of SELECT_HAND steps.
         action_selection = np.array([self.MAX_ACTIONS])
-        card_indices = np.array([2] * self.MAX_CARDS) # 8 cards, each can be selected (1) or not (0) #TODO can we or have we already masked card selection?
+        card_slots = np.array([self.MAX_CARDS + 1] * self.MAX_PICKS)
         self.action_space = spaces.MultiDiscrete(np.concatenate([
             action_selection,
-            card_indices
+            card_slots
         ]))
         ACTION_SLICE_LAYOUT = [
             ("action_selection", 1),
-            ("card_indices", self.MAX_CARDS)
+            ("card_indices", self.MAX_PICKS)
         ]
         slices = self._build_action_slices(ACTION_SLICE_LAYOUT)
         
@@ -136,7 +147,10 @@ class BalatroEnv(gym.Env):
         
         # Create initial action mask
         initial_available_actions = initial_request.get('available_actions', [])
-        initial_action_mask = self._create_action_mask(initial_available_actions)
+        initial_hand = (initial_request.get('game_state', {}).get('hand', {}) or {})
+        initial_action_mask = self._create_action_mask(
+            initial_available_actions, initial_hand.get('size')
+        )
         self._action_masks = initial_action_mask
         
         return initial_observation, {}
@@ -307,7 +321,9 @@ class BalatroEnv(gym.Env):
 
         # Create action mask for MaskablePPO
         available_actions = next_request.get('available_actions', [])
-        action_mask = self._create_action_mask(available_actions)
+        action_mask = self._create_action_mask(
+            available_actions, (game_state.get('hand', {}) or {}).get('size')
+        )
 
         info = self._build_info(game_state, response_data, next_request)
         self._emit_step(response_data, game_state, reward, timings, next_request)
@@ -433,33 +449,52 @@ class BalatroEnv(gym.Env):
         else:
             return np.array([True] * sum(self.action_space.nvec), dtype=bool)
     
-    def _create_action_mask(self, available_actions):
-        """Create action mask for MultiDiscrete space"""
-        action_masks = []
-        
-        # Action selection mask (3 possible actions: SELECT_HAND=1, PLAY_HAND=2, DISCARD_HAND=3)
+    def _create_action_mask(self, available_actions, hand_size=None):
+        """
+        Build the flat action mask for MaskablePPO
+
+        Layout matches the action space: MAX_ACTIONS action-type entries, then
+        one (MAX_CARDS + 1)-wide block per card pick.
+
+        The env only reports *which hand positions exist*. The constraints that
+        depend on the choices being made -- no repeating a card, at least
+        MIN_PICKS, at most MAX_PICKS, everything after STOP is STOP -- are
+        applied inside the policy during sampling, because they cannot be known
+        here: they depend on picks that have not happened yet when this is built.
+
+        Args:
+            available_actions: Balatro action ids currently legal
+            hand_size: Cards actually in hand; defaults to a full hand
+
+        Returns:
+            Flat list of bools, length sum(action_space.nvec)
+        """
+        # Action selection mask (SELECT_HAND=1, PLAY_HAND=2, DISCARD_HAND=3)
         # Map Balatro action IDs to AI indices: 1->0, 2->1, 3->2
         action_selection_mask = [False] * self.MAX_ACTIONS
-        balatro_to_ai_mapping = {1: 0, 2: 1, 3: 2}  # SELECT_HAND, PLAY_HAND, DISCARD_HAND
-        
+        balatro_to_ai_mapping = {1: 0, 2: 1, 3: 2}
+
         for action_id in available_actions:
             if action_id in balatro_to_ai_mapping:
-                ai_index = balatro_to_ai_mapping[action_id]
-                action_selection_mask[ai_index] = True
-        action_masks.append(action_selection_mask)
-        
-        # Card selection masks - context-aware based on available actions
-        if any(action_id in [2, 3] for action_id in available_actions):
-            # PLAY_HAND or DISCARD_HAND available - card params don't matter
-            for _ in range(self.MAX_CARDS):
-                action_masks.append([True, False])  # Force "not selected"
-        else:
-            # Only SELECT_HAND available - allow card selection
-            for _ in range(self.MAX_CARDS):
-                action_masks.append([True, True])
-        
-        # Flatten for MaskablePPO
-        return [item for sublist in action_masks for item in sublist] 
+                action_selection_mask[balatro_to_ai_mapping[action_id]] = True
+
+        # A row with no legal action type would make the distribution
+        # degenerate; fall back to SELECT_HAND, which is what the mod defaults to
+        if not any(action_selection_mask):
+            action_selection_mask[0] = True
+
+        if hand_size is None:
+            hand_size = self.MAX_CARDS
+        usable = max(0, min(int(hand_size), self.MAX_CARDS))
+
+        # One block per pick: existing hand positions, plus a STOP slot the
+        # policy gates on how many picks have been made
+        card_block = [i < usable for i in range(self.MAX_CARDS)] + [True]
+
+        mask = list(action_selection_mask)
+        for _ in range(self.MAX_PICKS):
+            mask.extend(card_block)
+        return mask
 
     @staticmethod
     def _build_action_slices(layout: List[Tuple[str, int]]) -> Dict[str, slice]:

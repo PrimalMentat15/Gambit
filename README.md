@@ -3,13 +3,6 @@
 A reinforcement learning agent that plays Balatro, combining a Lua mod for game
 instrumentation with a Python training environment.
 
-## Credits
-
-Gambit builds on [balatro-rl](https://github.com/angelvalentin80/balatro-rl) by
-**Angel Valentin**, which established the RLBridge mod, the Gymnasium environment
-and the reward design. That project is MIT licensed and its copyright is retained
-in [LICENSE](LICENSE) alongside this work's.
-
 ## Overview
 
 The mod extracts game state from Balatro and executes actions chosen by the agent.
@@ -88,20 +81,59 @@ gives a measured **4.6x** speedup:
 Pumping card movement as well (`BALATRO_RL_PUMP`) was measured as a **regression**
 (114 ms/step, one step reaching 13 s) and is off by default.
 
-Separately, **15.3% of steps used to be discarded outright**. The action space is
+Separately, **15.3% of steps used to be discarded outright**. The action space was
 8 independent binary bits, so the policy could select 6–8 cards, but Balatro caps
 hand selection at 5 and the mod rejected anything outside 1–5 — burning the whole
-step. A MultiDiscrete action mask is per-dimension and cannot express "at most 5
-of 8", so the constraint is enforced in `BalatroActionMapper` instead: selections
-are clamped to 5 and empty ones fall back to a single card. The `cards_dropped`
-and `empty_selection` counters on each `step` event show whether the policy is
-learning the limit on its own.
+step. This was first patched by clamping the selection after the fact, which
+removed the waste but meant the executed action differed from the sampled one
+(action projection), on 58.5% of `SELECT_HAND` steps. It is now fixed properly by
+the autoregressive action space below, and clamping is retained only as an
+assertion that should never fire.
 
 Inspect any run with:
 
 ```bash
 python -m ai.tools.latency_report
 ```
+
+### Autoregressive card selection
+
+The action space is `MultiDiscrete([3, 9, 9, 9, 9, 9])` — one action-type choice
+followed by up to 5 card picks, each holding a hand position (0–7) or STOP (8).
+`AutoregressiveCardPolicy` (`ai/policies/`) picks them sequentially inside a
+**single forward pass**, masking each pick against the cards already taken and
+gating STOP on the minimum. Illegal selections — too many cards, duplicates,
+none at all — are therefore unrepresentable rather than corrected afterwards.
+
+Two properties this preserves, both verified in `tests/test_autoregressive.py`:
+
+- **One environment step per decision.** All 5 sub-decisions happen inside the
+  policy, so the env still does exactly one socket round-trip per `step()`.
+  Since the game round-trip is ~99% of wall-clock time, splitting a selection
+  into 5 env steps would have been a large regression.
+- **`log_prob` reproduces exactly** between sampling and PPO's recompute in
+  `evaluate_actions` (measured difference: 0.0). Sampling and scoring share one
+  code path specifically so they cannot drift — a mismatch would corrupt PPO's
+  ratio silently, with no error to notice.
+
+`PLAY_HAND`/`DISCARD_HAND` take no card parameters, so their slots are forced to
+STOP and contribute no log-probability: the policy is not graded on a decision
+the game ignores.
+
+### Observation size is stable at any hand size
+
+The observation is a fixed `Box(216,)`, built by encoding up to `MAX_CARDS` cards
+into a fixed-size block. Hand size is not a constant — jokers/vouchers change it,
+and consumables like Cryptid insert copies directly into hand, which the engine
+does not cap the way it caps the deck — so an observation whose length depended on
+however many cards happened to be in hand would silently violate the declared
+space the moment the hand size drifted from a specific number. `max_cards` is now
+passed into `BalatroStateMapper` at construction (`BalatroEnv.MAX_CARDS`) so it
+tracks the environment's actual action space rather than being a second constant
+that has to be kept in sync by hand, oversized hands are truncated with a visible
+counter (`hand_truncated`) rather than changing the array length, and a final
+length check acts as a safety net that logs loudly if it ever fires — which it
+should not, if the padding logic above it is correct.
 
 ## Environment variables
 
@@ -148,7 +180,7 @@ keyed to action id, so `PLAY_HAND` is the same hue in every panel.
 | **Live** | Dockable panels: throughput, latency by action, latency over time, episode reward, win rate, game state, action distribution, event log |
 | **Control** | Launch a run (optionally starting Balatro too), watch process health, read trainer output |
 | **Analysis** | Compare runs on any TensorBoard metric, plus reward-component and hand-type tables. Reads event files directly — no TensorBoard server |
-| **Replays** | Browse saved winning games and step through their actions |
+| **Replays** | Browse saved winning games, see the seed each one was played on, and step through their actions |
 
 ### Starting and stopping runs
 
@@ -194,9 +226,11 @@ and the monitor renders offscreen to a screenshot. See [tests/README.md](tests/R
 
 ## Future Work
 
-- Reconnect instead of exiting when Balatro closes mid-run
 - Training parallelization across multiple game instances
 - Expand beyond ante 1 (jokers, shop, blind selection)
+
+See [DECISIONS.md](DECISIONS.md) for the full engineering log — what was tried,
+what was measured, and why each choice was made.
 
 ## License
 

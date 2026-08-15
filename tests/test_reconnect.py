@@ -1,9 +1,10 @@
 """
-Disconnect resilience and action-clamping tests
+Disconnect resilience, action decoding, and observation-size tests
 
 Closing Balatro mid-run used to kill the trainer. These verify it now survives a
-game restart, still fails cleanly when the game never returns, and that illegal
-card selections are projected into legal ones instead of being rejected.
+game restart and still fails cleanly when the game never returns, that card slots
+decode to a legal selection, and that the observation keeps its declared length at
+any hand size.
 
     venv/Scripts/python.exe tests/test_reconnect.py
 """
@@ -41,30 +42,41 @@ def game_state(chips=0):
     }
 
 
-def test_clamping():
-    """Every selection the policy can emit becomes a legal 1-5 card selection"""
+def test_card_slot_decoding():
+    """
+    Card slots decode to a legal 1-5 card selection
+
+    The action format is now one action-type value plus 5 card slots, each
+    holding a 0-based hand position or STOP (8). This replaced 8 independent
+    binary bits, which could express selections Balatro rejects; see
+    tests/test_autoregressive.py for the policy-side guarantee that illegal
+    selections are unrepresentable in the first place.
+    """
+    STOP = 8
     mapper = BalatroActionMapper(
-        {"action_selection": slice(0, 1), "card_indices": slice(1, 9)}
+        {"action_selection": slice(0, 1), "card_indices": slice(1, 6)}
     )
 
-    # Exactly the distribution seen in the real run: 0 and 6-8 were all rejected
-    for bits, label in [
-        ([0] * 8, "0 cards"),
-        ([1, 0, 0, 0, 0, 0, 0, 0], "1 card"),
-        ([1, 1, 1, 1, 1, 0, 0, 0], "5 cards"),
-        ([1, 1, 1, 1, 1, 1, 0, 0], "6 cards"),
-        ([1, 1, 1, 1, 1, 1, 1, 0], "7 cards"),
-        ([1] * 8, "8 cards"),
-    ]:
-        params = mapper._extract_select_hand_params(np.array([0] + bits))
-        assert 1 <= len(params) <= 5, f"{label} -> illegal selection {params}"
-        assert len(set(params)) == len(params), f"{label} -> duplicate indices"
-        assert all(1 <= p <= 8 for p in params), f"{label} -> out of bounds {params}"
+    cases = [
+        ([0, STOP, STOP, STOP, STOP], [1], "immediate STOP falls back to one card"),
+        ([0, 1, STOP, STOP, STOP], [1, 2], "two cards then STOP"),
+        ([0, 1, 2, 3, 4], [1, 2, 3, 4, 5], "a full five picks"),
+        ([7, STOP, STOP, STOP, STOP], [8], "last hand position"),
+        # Everything after the first STOP is ignored, so a stale value in a
+        # later slot cannot smuggle in an extra card
+        ([0, STOP, 3, 4, 5], [1], "values after STOP are ignored"),
+    ]
 
-    assert mapper.clamped_count == 3, mapper.clamped_count
-    assert mapper.empty_count == 1, mapper.empty_count
-    print(f"clamping OK: all selections legal, "
-          f"{mapper.clamped_count} clamped, {mapper.empty_count} empty-filled")
+    for slots, expected, label in cases:
+        params = mapper._extract_select_hand_params(np.array([0] + slots))
+        assert params == expected, f"{label}: got {params}, expected {expected}"
+        assert 1 <= len(params) <= 5, f"{label} -> illegal count {params}"
+        assert len(set(params)) == len(params), f"{label} -> duplicates {params}"
+
+    # The mapper's clamp is now only a backstop; with the autoregressive policy
+    # producing the slots it should never be needed
+    assert mapper.clamped_count == 0, f"clamp fired unexpectedly: {mapper.clamped_count}"
+    print(f"card-slot decoding OK across {len(cases)} cases, clamp backstop unused")
 
 
 def test_observation_size_is_stable():
@@ -190,7 +202,7 @@ def test_accept_timeout_is_bounded():
 
 if __name__ == "__main__":
     print(f"reconnect timeout configured to {RECONNECT_TIMEOUT:.0f}s\n")
-    test_clamping()
+    test_card_slot_decoding()
     test_observation_size_is_stable()
     test_reconnect_after_drop()
     test_accept_timeout_is_bounded()

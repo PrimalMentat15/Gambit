@@ -338,6 +338,11 @@ class BalatroActionMapper:
     MIN_CARDS = 1
     MAX_SELECTED_CARDS = 5
 
+    # Card-slot value meaning "stop selecting". Must match BalatroEnv.STOP_INDEX
+    # and the policy's stop_index -- it is the hand size, so values 0..7 are
+    # positions and 8 terminates the selection.
+    STOP_INDEX = 8
+
     # Action id from RLBridge/actions.lua; the only one that takes card params
     SELECT_HAND = 1
 
@@ -404,24 +409,32 @@ class BalatroActionMapper:
         """
         Converts the raw action to a list of Lua card indices
 
-        The action space is 8 independent binary bits, so the policy can select
-        any number of cards, but Balatro accepts only 1-5. A MultiDiscrete action
-        mask is per-dimension and cannot express "at most 5 of 8", so the
-        constraint is enforced here instead: over-long selections are truncated
-        and empty ones fall back to a single card.
+        The card slots hold hand positions (0-based) terminated by a STOP value
+        (``STOP_INDEX``). The policy picks them sequentially and masks each pick
+        against the ones already taken, so the result is legal by construction:
+        1 to 5 cards, no duplicates, all within the hand.
 
-        This is action projection -- what gets executed differs from what was
-        sampled -- which slightly muddies credit assignment. The alternative was
-        worse: previously these actions were rejected by the mod and the whole
-        env step was wasted, which accounted for 15% of all steps.
+        The clamping below should therefore never trigger. It is kept as a
+        backstop with counters attached: ``clamped_count`` and ``empty_count``
+        reading non-zero after this change means the policy's masking has a bug,
+        which is worth catching loudly rather than silently sending the game an
+        action it will reject.
 
         Args:
             raw_action: The whole action from the RL agent
         Returns:
             List of 1-based card indices for Lua, always between 1 and 5 long
         """
-        card_indices = raw_action[self.slices["card_indices"]]
-        selected = [i + 1 for i, val in enumerate(card_indices) if val == 1]
+        card_slots = raw_action[self.slices["card_indices"]]
+
+        selected: List[int] = []
+        for value in card_slots:
+            index = int(value)
+            if index >= self.STOP_INDEX:
+                break  # STOP: everything after this is also STOP
+            position = index + 1  # Lua is 1-based
+            if position not in selected:
+                selected.append(position)
 
         self.last_dropped = 0
         self.last_was_empty = False
@@ -431,8 +444,6 @@ class BalatroActionMapper:
             self.clamped_count += 1
             selected = selected[:self.MAX_SELECTED_CARDS]
         elif not selected:
-            # No bits set: there is nothing to truncate, so pick the first card
-            # rather than send a selection the mod will reject
             self.last_was_empty = True
             self.empty_count += 1
             selected = [1]

@@ -44,6 +44,7 @@ from sb3_contrib.common.wrappers import ActionMasker
 
 # Our custom environment
 from .environment.balatro_env import BalatroEnv
+from .policies import AutoregressiveCardPolicy
 from .telemetry import EventType, RunSession, TelemetryEmitter, close_emitter, emit, set_emitter
 
 DEFAULT_TIMESTEPS = 250000
@@ -206,7 +207,7 @@ def create_model(env, tb_dir: str = "./tensorboard_logs/", device: Optional[str]
         MaskablePPO model ready for training
     """
     model = MaskablePPO(
-        "MlpPolicy",
+        AutoregressiveCardPolicy,
         env,
         verbose=1,
         learning_rate=1e-4,
@@ -249,22 +250,89 @@ def create_callbacks(save_freq=1000, checkpoints_dir="./models/", session=None):
     return callbacks
 
 
-def find_latest_checkpoint(runs_dir: str = "runs") -> Optional[Path]:
+def checkpoint_spaces(path):
+    """
+    Read a checkpoint's observation and action spaces without building the model
+
+    Args:
+        path: Path to a saved SB3 zip
+
+    Returns:
+        (observation_space, action_space), or (None, None) if unreadable
+    """
+    try:
+        from stable_baselines3.common.save_util import load_from_zip_file
+        data, _, _ = load_from_zip_file(str(path), device="cpu", load_data=True, verbose=0)
+        return data.get("observation_space"), data.get("action_space")
+    except Exception:
+        return None, None
+
+
+def checkpoint_is_compatible(path, env) -> bool:
+    """
+    Whether a checkpoint can be resumed into this environment
+
+    Changing the action or observation space invalidates every earlier
+    checkpoint. SB3 does detect the mismatch, but only once it is deep enough
+    into ``load()`` to raise -- which aborts the whole run. Checking up front
+    lets an incompatible checkpoint be skipped with an explanation instead.
+    """
+    obs_space, action_space = checkpoint_spaces(path)
+    if obs_space is None or action_space is None:
+        return False
+    return obs_space == env.observation_space and action_space == env.action_space
+
+
+def find_latest_checkpoint(runs_dir: str = "runs", env=None) -> Optional[Path]:
     """
     Most recently modified checkpoint across all runs
 
     Also searches the legacy flat models/ directory so older checkpoints
     remain resumable.
+
+    Args:
+        runs_dir: Parent directory holding run directories
+        env: If given, only return a checkpoint whose spaces match this env, so
+            an incompatible one is skipped rather than crashing the run
+
+    Returns:
+        Path to the newest usable checkpoint, or None
     """
     candidates = list(Path(runs_dir).glob("*/checkpoints/balatro_model_*_steps.zip"))
     candidates += list(Path("models").glob("balatro_model_*_steps.zip"))
     if not candidates:
         return None
-    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    if env is None:
+        return candidates[0]
+
+    logger = logging.getLogger(__name__)
+    for candidate in candidates:
+        if checkpoint_is_compatible(candidate, env):
+            return candidate
+
+    # Every checkpoint predates a space change. Say so precisely rather than
+    # silently starting fresh, because "why did it not resume" is otherwise
+    # invisible.
+    _, action_space = checkpoint_spaces(candidates[0])
+    logger.warning(
+        "Skipping %d checkpoint(s): none match the current spaces. "
+        "Newest is %s with action space %s, environment expects %s. "
+        "The action space changed, so earlier checkpoints cannot be resumed; "
+        "starting from scratch.",
+        len(candidates), candidates[0].name, action_space, env.action_space,
+    )
+    emit(EventType.LOG, level="warning", message="incompatible checkpoints skipped",
+         checkpoints=len(candidates), newest=str(candidates[0]),
+         checkpoint_action_space=str(action_space),
+         env_action_space=str(env.action_space))
+    return None
 
 
 def train_agent(session: RunSession, total_timesteps=DEFAULT_TIMESTEPS,
-                save_path=None, resume_from=None, device=None, save_freq=None):
+                save_path=None, resume_from=None, device=None, save_freq=None,
+                auto_resume=False, runs_dir="runs"):
     """
     Main training function
 
@@ -272,9 +340,12 @@ def train_agent(session: RunSession, total_timesteps=DEFAULT_TIMESTEPS,
         session: Run session owning this run's directory
         total_timesteps: Number of training steps
         save_path: Where to save final model
-        resume_from: Path to checkpoint to resume from
+        resume_from: Explicit checkpoint to resume from
         device: Torch device override
         save_freq: Checkpoint interval in timesteps
+        auto_resume: Search for the newest compatible checkpoint when
+            resume_from is not given
+        runs_dir: Where to search when auto_resume is set
     """
     logger = logging.getLogger(__name__)
     resolved_device = get_device(device)
@@ -298,7 +369,29 @@ def train_agent(session: RunSession, total_timesteps=DEFAULT_TIMESTEPS,
         # Create environment and model
         env = create_environment(monitor_path=session.monitor_path)
 
+        # Resolve the checkpoint only now that the env exists, since
+        # compatibility can only be judged against its spaces
         if resume_from and Path(resume_from).exists():
+            if not checkpoint_is_compatible(resume_from, env):
+                # Explicitly requested, so refuse rather than quietly ignoring
+                # the request and training something the user did not ask for
+                _, ckpt_action_space = checkpoint_spaces(resume_from)
+                raise RuntimeError(
+                    f"Checkpoint {resume_from} cannot be resumed: it was trained "
+                    f"with action space {ckpt_action_space}, but this environment "
+                    f"uses {env.action_space}. The action space changed, so the "
+                    f"weights do not transfer. Re-run with --no-resume to start "
+                    f"from scratch."
+                )
+        elif auto_resume:
+            found = find_latest_checkpoint(runs_dir, env=env)
+            resume_from = str(found) if found else None
+            if resume_from:
+                print(f"📂 Found checkpoint: {resume_from}")
+        else:
+            resume_from = None
+
+        if resume_from:
             logger.info(f"Resuming training from: {resume_from}")
             model = MaskablePPO.load(
                 resume_from,
@@ -425,7 +518,7 @@ if __name__ == "__main__":
                 "total_timesteps": args.timesteps,
                 "device": get_device(args.device),
                 "algo": "MaskablePPO",
-                "policy": "MlpPolicy",
+                "policy": "AutoregressiveCardPolicy",
                 "learning_rate": 1e-4,
                 "n_steps": 4096,
                 "batch_size": 64,
@@ -441,14 +534,8 @@ if __name__ == "__main__":
     setup_logging(os.path.join(session.run_dir, "training.log"))
     set_emitter(TelemetryEmitter(session.events_path))
 
-    # Resolve which checkpoint to resume from
-    resume_from = args.resume
-    if resume_from is None and not args.no_resume:
-        latest = find_latest_checkpoint(args.runs_dir)
-        if latest:
-            resume_from = str(latest)
-            print(f"📂 Found checkpoint: {latest}")
-
+    # Checkpoint discovery happens inside train_agent, where the environment
+    # exists and compatibility can actually be judged against its spaces
     print("\n🎮 Starting Balatro RL Training!")
     print(f"📁 Run: {session.run_dir}")
     print("Setup steps:")
@@ -462,7 +549,9 @@ if __name__ == "__main__":
         model = train_agent(
             session=session,
             total_timesteps=args.timesteps,
-            resume_from=resume_from,
+            resume_from=args.resume,
+            auto_resume=args.resume is None and not args.no_resume,
+            runs_dir=args.runs_dir,
             device=args.device,
             save_freq=args.save_freq,
         )
