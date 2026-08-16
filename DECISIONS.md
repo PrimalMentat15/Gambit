@@ -612,3 +612,125 @@ the first.
 **The general lesson**, worth more than the fix: a caveat recorded in
 documentation is not a safeguard. If a known-bad state is reachable through the
 default path, it will be reached.
+
+---
+
+## Phase 2 — Replacing the game with a simulator
+
+**Decision:** retire the socket stack entirely. The `RLBridge/` Lua mod, its
+JSON-over-TCP protocol, the Gymnasium wrapper, the SB3 trainer and the
+threshold-based reward in `ai/` are gone. A seed-faithful Rust reimplementation
+of Balatro (`sim/`) is now the environment, driven by a PPO trainer in `train/`;
+`bridge/` remains only to run a trained checkpoint against the real game.
+
+**Why:** every measurement in Phase 1 pointed at the same wall. Training
+throughput was bound by the game's own event pacing — `EventManager:update` is
+driven by real time, not `GAMESPEED`, so the engine completes at most ~60
+blocking events per real second no matter how the multiplier is set. Forcing the
+queue to drain in-frame bought 4.6x (296 → 65 ms/step) and that was the ceiling.
+The simulator does ~10,000 steps/sec, four orders of magnitude past what the
+mod could reach, and it does it deterministically per seed.
+
+**What survived the move**, ported rather than rewritten:
+
+- **Telemetry** → `train/balatro_train/telemetry/`. Unchanged in design: `emit()`
+  does a dict construction and a non-blocking queue put, and drops events rather
+  than adding latency. The principle held up under a 1500x throughput increase.
+- **Graceful stop** → a stop file checked once per training iteration. The
+  original justification was that Windows will not interrupt a thread blocked in
+  a socket read; that specific reason is gone, but a file still beats a signal
+  because it works regardless of who started the trainer or whether they share a
+  process tree.
+- **The monitor** → repointed at the new event schema.
+
+**What did not survive, and why it is worth naming:** the per-step event. At two
+steps per second, logging every step was free and the panels read from it
+directly. At ten thousand steps per second the same design would write gigabytes
+an hour and slow the thing it was measuring. Action distribution is now
+accumulated in the rollout loop and emitted once per iteration.
+
+**The general lesson:** an instrumentation design is only correct relative to a
+throughput. None of the telemetry code was wrong; the assumption underneath one
+of its consumers was.
+
+---
+
+## Phase 2a — One environment
+
+**Decision:** a single conda environment, `balatro`, for the trainer, the
+simulator bindings, the bridge and the monitor. The three virtualenvs it
+replaces are deleted.
+
+**Why:** they had silently diverged. The monitor's environment carried
+CUDA-enabled torch; the trainer's, created from the same `pyproject.toml` on the
+same machine, carried a CPU-only build — because the default PyPI torch wheel is
+CUDA-enabled on Linux and CPU-only on Windows, and nothing in the resolution
+surfaces that. A trainer that runs at a fraction of the expected speed with no
+error is exactly the failure that a per-directory environment invites: the
+mistake is invisible from the directory you are standing in.
+
+Torch is now installed explicitly from the CUDA index as a separate first step,
+before anything that depends on it, so the choice is stated rather than
+inherited.
+
+---
+
+## Phase 2b — Pruning the event drain
+
+**Decision:** the in-frame event drain was ported to a Steamodded mod for the
+new bridge, then deleted before it was ever used.
+
+**Why:** it was built to make the *real game* fast enough to train against. Once
+the simulator took over training, the only remaining use for the live game was
+watching a trained checkpoint play — and for that, speed is not the goal.
+`--gamespeed 4` is the pace at which a run is legible to a human.
+
+The drain also carried real risk for no remaining benefit: running queued
+animations earlier than the engine intended can fire an animation whose target
+UI object has already been destroyed, a crash class balatrobot already ships
+patches for.
+
+**The general lesson:** an optimisation outlives its justification more quietly
+than it outlives its cost. This one was correct, measured, and worth 4.6x — and
+still the right call was to delete it, because the workload it was written for
+no longer exists.
+
+---
+
+## Phase 2c — auto_minibatch optimises for fitting, not for speed
+
+**Decision:** `configs/m3_fast.yaml` ships `perf.auto_minibatch: false` with a
+hand-tuned `ppo.minibatch_size: 4096`, and `perf.buffer_device: cpu` rather than
+`auto`.
+
+**Measured**, same run, same 6GB RTX 4050, everything else identical:
+
+| `minibatch_size` | steps/sec |
+|---|---|
+| 4096 | ~5,250 |
+| 16384 (chosen by the probe) | ~640 |
+
+**Why it happens:** the probe halves `minibatch_size` until a synthetic
+forward/backward/Adam step *fits* in VRAM. On this card 16384 fits — it measured
+a 7,702 MiB peak and accepted it. But "fits" and "fast" are different questions.
+At 16384 the card sits at ~5.8 of 6.1 GB, and CUDA responds to that pressure by
+thrashing rather than cleanly OOMing, which the probe cannot observe because it
+only ever asks whether one allocation succeeds.
+
+**How it was found**, which is the part worth remembering: throughput collapsed
+8x across a resume and the obvious suspect was the thing that had visibly
+changed — `torch.compile` had crashed on missing Triton, so it had been turned
+off. Installing `triton-windows` and re-enabling it recovered ~5% (610 → 639
+steps/s), not 8x. Only then did comparing the config *baked into the old
+checkpoint* against the running one show the real difference: the fast era ran
+`minibatch_size: 4096, auto_minibatch: false` and, notably, `compile: false`
+too. The 5,029 steps/s era never used torch.compile at all.
+
+**The general lesson:** the thing that changed most visibly is not necessarily
+the thing that changed causally. Checkpoints carry their own config; when
+throughput moves, diff the recorded config against the live one before theorising
+about the component that happened to throw the loudest error.
+
+A second, narrower lesson: an autotuner is only as good as the quantity it
+measures. This one measures a boolean (does it fit) and was trusted for a
+continuous one (how fast is it).

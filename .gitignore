@@ -38,8 +38,6 @@ venv.bak/
 *.swo
 *~
 walkthrough.md
-CLAUDE.md
-COMPARISON.md
 # OS files
 .DS_Store
 .DS_Store?
@@ -85,3 +83,24 @@ monitor.json
 
 # Generated training data (rebuilt every run)
 replays.json
+MIGRATION_PLAN.md
+
+# Copyrighted game source (extracted locally from Balatro.exe) — never commit
+reference/lua_source/
+
+# Rust
+target/
+
+# Python
+.venv/
+
+# Built RNG oracle (rebuild with tools/build_oracle_luajit.sh)
+tools/oracle/
+tools/oracle-build/
+
+# Oracle vector harnesses contain verbatim Balatro Lua (copyrighted) - local only, never commit
+tools/oracle-harnesses/
+
+# Original uncompressed screen recording (333MB, exceeds GitHub 100MB limit) - local only
+balatrodemo.orig.mp4
+CLAUDE.md
