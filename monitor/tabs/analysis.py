@@ -1,8 +1,8 @@
 """
 Analysis tab
 
-Post-run evaluation: pick runs, compare their learning curves, and see which
-reward components actually fired.
+Post-run evaluation: pick runs, compare their learning curves, and see where
+episodes actually ended and what the policy spent its actions on.
 
 Reads TensorBoard event files directly, so there is no separate server to start
 and no second window to switch to.
@@ -22,14 +22,20 @@ from PySide6.QtWidgets import (
 from .. import analysis, theme
 from ..panels.base import StatTile
 
-# Curves worth overlaying when comparing runs
+# Curves worth overlaying when comparing runs, in the order you would read them:
+# the honest cross-run signal first (eval/*), then training-side proxies.
 COMPARE_TAGS = [
-    "rollout/ep_rew_mean",
-    "rollout/ep_len_mean",
-    "train/loss",
-    "train/entropy_loss",
-    "train/explained_variance",
-    "time/fps",
+    "eval/win_rate",
+    "eval/ante_mean",
+    "charts/ep_win_rate",
+    "charts/ep_return_mean",
+    "charts/ep_ante_mean",
+    "curriculum/win_ante",
+    "curriculum/promo_win_rate",
+    "losses/entropy",
+    "losses/approx_kl",
+    "losses/v_loss",
+    "charts/sps",
 ]
 
 
@@ -49,10 +55,14 @@ class SummaryWorker(QRunnable):
     which is why this is a worker rather than a direct call.
     """
 
-    def __init__(self, run_dir: str):
+    def __init__(self, run_dir: str, owner=None):
         super().__init__()
         self.run_dir = run_dir
-        self.signals = SummarySignals()
+        # Parented to the tab, not owned by the worker: QThreadPool drops its
+        # reference to a finished QRunnable, and a signals object whose only
+        # owner was that runnable gets deleted underneath a worker still
+        # emitting -- which surfaces as "C++ object already deleted" at exit.
+        self.signals = SummarySignals(owner)
 
     def run(self) -> None:
         try:
@@ -145,10 +155,12 @@ class AnalysisTab(QWidget):
 
         self.tiles = {}
         for index, (key, caption) in enumerate([
-            ("episodes", "episodes"), ("win_rate", "win rate"),
-            ("mean_reward", "mean reward"), ("best_reward", "best reward"),
-            ("best_chips", "best chips"), ("steps_per_sec", "steps / sec"),
-            ("wall_time", "wall time"), ("steps", "steps"),
+            ("milestone", "ante-8 argmax"), ("win_ante", "goal reached"),
+            ("promotions", "promotions"), ("best_ante", "best ante"),
+            ("episodes", "episodes"), ("win_rate", "win rate (at goal)"),
+            ("mean_return", "mean return"), ("best_return", "best return"),
+            ("steps", "steps"), ("steps_per_sec", "steps / sec"),
+            ("iterations", "iterations"), ("wall_time", "wall time"),
         ]):
             tile = StatTile(caption)
             self.tiles[key] = tile
@@ -158,10 +170,10 @@ class AnalysisTab(QWidget):
         theme.legend(self.compare_plot)
 
         self.tables = QSplitter(Qt.Horizontal)
-        self.components = self._make_table(["Reward component", "Times fired"])
-        self.hands = self._make_table(["Hand type", "Played", "Mean chips"])
-        self.tables.addWidget(self._wrap("Reward components", self.components))
-        self.tables.addWidget(self._wrap("Hand types", self.hands))
+        self.antes = self._make_table(["Terminal ante", "Episodes", "Share"])
+        self.actions = self._make_table(["Action type", "Count", "Share"])
+        self.tables.addWidget(self._wrap("Terminal antes", self.antes))
+        self.tables.addWidget(self._wrap("Action types", self.actions))
 
         column.addWidget(tiles)
         column.addWidget(self.compare_plot, 2)
@@ -205,7 +217,7 @@ class AnalysisTab(QWidget):
 
     def refresh_runs(self) -> None:
         """Rescan the runs directory"""
-        from ai.telemetry import list_runs
+        from balatro_train.telemetry import list_runs
 
         blocked = self.run_list.blockSignals(True)
         self.run_list.clear()
@@ -233,14 +245,14 @@ class AnalysisTab(QWidget):
 
         for tile in self.tiles.values():
             tile.set_value("...")
-        self.components.setRowCount(0)
-        self.hands.setRowCount(0)
+        self.antes.setRowCount(0)
+        self.actions.setRowCount(0)
 
         if run_dir in self.pending:
             return
         self.pending.add(run_dir)
 
-        worker = SummaryWorker(run_dir)
+        worker = SummaryWorker(run_dir, self)
         worker.signals.done.connect(self._on_summary_ready)
         worker.signals.failed.connect(self._on_summary_failed)
         self.pool.start(worker)
@@ -267,19 +279,28 @@ class AnalysisTab(QWidget):
             if key in self.tiles:
                 self.tiles[key].set_value(value)
 
-        rows = sorted(summary["components"].items(), key=lambda kv: -kv[1])
-        self.components.setRowCount(len(rows))
-        for row, (label, count) in enumerate(rows):
-            self.components.setItem(row, 0, QTableWidgetItem(label))
-            self.components.setItem(row, 1, QTableWidgetItem(f"{count:,}"))
+        # Antes read in game order, not by frequency: the shape worth seeing is
+        # where along the run episodes stop, which sorting by count destroys.
+        antes = sorted(summary["antes"].items())
+        total_eps = sum(summary["antes"].values()) or 1
+        self.antes.setRowCount(len(antes))
+        for row, (ante, count) in enumerate(antes):
+            self.antes.setItem(row, 0, QTableWidgetItem(str(ante)))
+            self.antes.setItem(row, 1, QTableWidgetItem(f"{count:,}"))
+            self.antes.setItem(
+                row, 2, QTableWidgetItem(f"{count / total_eps * 100:.1f}%")
+            )
 
-        hands = sorted(summary["hand_types"].items(), key=lambda kv: -kv[1]["count"])
-        self.hands.setRowCount(len(hands))
-        for row, (name, entry) in enumerate(hands):
-            mean = entry["chips"] / entry["count"] if entry["count"] else 0
-            self.hands.setItem(row, 0, QTableWidgetItem(name))
-            self.hands.setItem(row, 1, QTableWidgetItem(f"{entry['count']:,}"))
-            self.hands.setItem(row, 2, QTableWidgetItem(f"{mean:.0f}"))
+        actions = sorted(summary["action_counts"].items(), key=lambda kv: -kv[1])
+        total_actions = sum(summary["action_counts"].values()) or 1
+        self.actions.setRowCount(len(actions))
+        for row, (action, count) in enumerate(actions):
+            name = theme.ACTION_NAMES.get(action, str(action))
+            self.actions.setItem(row, 0, QTableWidgetItem(name))
+            self.actions.setItem(row, 1, QTableWidgetItem(f"{count:,}"))
+            self.actions.setItem(
+                row, 2, QTableWidgetItem(f"{count / total_actions * 100:.1f}%")
+            )
 
     def _checked_runs(self) -> List[tuple]:
         out = []
@@ -305,7 +326,7 @@ class AnalysisTab(QWidget):
                 # Not read yet; the worker will call back and redraw
                 if run_dir not in self.pending:
                     self.pending.add(run_dir)
-                    worker = SummaryWorker(run_dir)
+                    worker = SummaryWorker(run_dir, self)
                     worker.signals.done.connect(self._on_summary_ready)
                     worker.signals.failed.connect(self._on_summary_failed)
                     self.pool.start(worker)

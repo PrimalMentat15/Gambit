@@ -33,10 +33,9 @@ from .bus import EventBus
 from .config import MonitorConfig
 from .panels import build_panels
 from .supervisor import Supervisor
-from .tabs import AnalysisTab, ControlTab, ReplaysTab
+from .tabs import AnalysisTab, ControlTab
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from ai.telemetry import list_runs  # noqa: E402
+from balatro_train.telemetry import list_runs
 
 
 class MonitorWindow(QMainWindow):
@@ -119,14 +118,16 @@ class MonitorWindow(QMainWindow):
         # chance to checkpoint.
         self.stop_action = QAction("Stop", self)
         self.stop_action.setShortcut(QKeySequence("Ctrl+."))
-        self.stop_action.setToolTip("Checkpoint and exit at the next step boundary (Ctrl+.)")
+        self.stop_action.setToolTip(
+            "Checkpoint and exit at the next iteration boundary (Ctrl+.)"
+        )
         self.stop_action.triggered.connect(self._on_stop)
         bar.addAction(self.stop_action)
 
         self.kill_action = QAction("Kill", self)
         self.kill_action.setShortcut(QKeySequence("Ctrl+Shift+."))
         self.kill_action.setToolTip(
-            "Terminate the trainer and Balatro immediately (Ctrl+Shift+.)\n"
+            "Terminate the trainer immediately (Ctrl+Shift+.)\n"
             "Hold Shift while clicking to skip the confirmation"
         )
         self.kill_action.triggered.connect(self._on_kill)
@@ -180,10 +181,8 @@ class MonitorWindow(QMainWindow):
 
         self.control_tab = ControlTab(self.supervisor, self.config)
         self.analysis_tab = AnalysisTab(self.config)
-        self.replays_tab = ReplaysTab(self.config)
         self.tabs.addTab(self.control_tab, "Control")
         self.tabs.addTab(self.analysis_tab, "Analysis")
-        self.tabs.addTab(self.replays_tab, "Replays")
 
     def _build_status(self) -> None:
         self.status = QStatusBar()
@@ -266,7 +265,7 @@ class MonitorWindow(QMainWindow):
             return
         self.status.showMessage(
             "Stop requested - trainer will checkpoint and exit. "
-            "Use Kill if it is wedged waiting on Balatro.", 8000)
+            "Use Kill if it does not stop.", 8000)
 
     def _on_kill(self) -> None:
         # Shift skips the prompt: in a genuine emergency, a dialog is friction

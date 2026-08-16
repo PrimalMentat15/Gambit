@@ -47,24 +47,68 @@ STATUS = {
     "critical": "#d03b3b",
 }
 
-# Action identity is stable across every panel, keyed by the action ids in
-# RLBridge/actions.lua. Colour follows the entity, so PLAY_HAND is the same hue
-# wherever it appears rather than being assigned by current rank.
+# Action identity is stable across every panel, keyed by the indices in
+# balatro_train.encoding.ActionType (frozen: checkpoints bake them in).
 ACTION_NAMES = {
-    1: "SELECT_HAND",
-    2: "PLAY_HAND",
-    3: "DISCARD_HAND",
-    4: "START_RUN",
-    5: "SELECT_BLIND",
-    6: "RESTART_RUN",
+    0: "PLAY_HAND",
+    1: "DISCARD",
+    2: "SELECT_BLIND",
+    3: "SKIP_BLIND",
+    4: "CASH_OUT",
+    5: "BUY_SHOP",
+    6: "REROLL",
+    7: "LEAVE_SHOP",
+    8: "USE_CONSUMABLE",
+    9: "SELL_JOKER",
+    10: "SELL_CONSUMABLE",
+    11: "PICK_PACK",
+    12: "SKIP_PACK",
+    13: "MOVE_JOKER",
+}
+
+# Axis labels. Thirteen full names side by side overlap at any panel width, so
+# charts label bars with these and carry the full name in the tooltip/tables.
+ACTION_SHORT = {
+    0: "play",
+    1: "disc",
+    2: "blind",
+    3: "skip",
+    4: "cash",
+    5: "buy",
+    6: "rerol",
+    7: "leave",
+    8: "use",
+    9: "sellJ",
+    10: "sellC",
+    11: "pack",
+    12: "skipP",
+    13: "move",
+}
+
+# Colour is keyed to the game phase an action belongs to, not to the action
+# itself. There are 14 action types and 8 categorical slots, so per-action hues
+# would either collide silently or run past the validated palette; phase is also
+# the question actually being asked of the chart ("how much time in the shop?").
+# Within a panel the bar's position and label carry the individual identity.
+ACTION_PHASES = {
+    0: "play", 1: "play",
+    2: "blind", 3: "blind",
+    4: "round",
+    5: "shop", 6: "shop", 7: "shop",
+    8: "items", 9: "items", 10: "items",
+    11: "pack", 12: "pack",
+    13: "items",
+}
+PHASE_COLORS = {
+    "play": SERIES[0],
+    "blind": SERIES[1],
+    "round": SERIES[2],
+    "shop": SERIES[3],
+    "items": SERIES[4],
+    "pack": SERIES[6],
 }
 ACTION_COLORS = {
-    1: SERIES[0],
-    2: SERIES[1],
-    3: SERIES[2],
-    4: SERIES[3],
-    5: SERIES[4],
-    6: SERIES[5],
+    action: PHASE_COLORS[phase] for action, phase in ACTION_PHASES.items()
 }
 
 # Mark specs
@@ -110,6 +154,11 @@ def make_plot(y_label: str = "", x_label: str = "") -> pg.PlotWidget:
         axis.setTextPen(pg.mkPen(MUTED))
         axis.setStyle(tickLength=-4)
 
+    # Small values on the left axis would otherwise be relabelled with an SI
+    # prefix and a separate multiplier caption, which is easy to miss and reads
+    # as the wrong magnitude entirely when the caption is clipped.
+    item.getAxis("left").enableAutoSIPrefix(False)
+
     for side in ("top", "right"):
         item.getAxis(side).setStyle(showValues=False)
 
@@ -135,14 +184,22 @@ def fill(color: str, alpha: int = 40):
     return brush
 
 
-def legend(plot: pg.PlotWidget):
+def legend(plot: pg.PlotWidget, columns: int = 3):
     """
     Attach a legend
 
     Present whenever a plot carries two or more series, so identity is never
     conveyed by colour alone.
+
+    Laid out in columns rather than a single stack: panels are docked and can be
+    dragged short, and a tall legend in a short plot silently clips its own last
+    entries -- which is worse than no legend, because the reader cannot tell it
+    is incomplete.
     """
-    leg = plot.getPlotItem().addLegend(offset=(-10, 10), labelTextColor=INK_2)
+    leg = plot.getPlotItem().addLegend(
+        offset=(-10, 6), labelTextColor=INK_2, labelTextSize="8pt",
+        colCount=columns, horSpacing=14, verSpacing=-4,
+    )
     leg.setBrush(pg.mkBrush(PAGE))
     leg.setPen(pg.mkPen(AXIS))
     return leg

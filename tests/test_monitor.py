@@ -35,8 +35,8 @@ def test_tail_reader():
     path = os.path.join(tmp, "events.jsonl")
 
     with open(path, "w", encoding="utf-8") as f:
-        f.write(json.dumps({"v": 1, "seq": 1, "type": "step", "data": {}}) + "\n")
-        f.write(json.dumps({"v": 1, "seq": 2, "type": "step", "data": {}}) + "\n")
+        f.write(json.dumps({"v": 1, "seq": 1, "type": "rollout", "data": {}}) + "\n")
+        f.write(json.dumps({"v": 1, "seq": 2, "type": "rollout", "data": {}}) + "\n")
 
     reader = TailReader(path)
     events, restarted = reader.read()
@@ -67,7 +67,7 @@ def test_tail_reader():
 
     # A shorter file means a new run
     with open(path, "w", encoding="utf-8") as f:
-        f.write(json.dumps({"v": 1, "seq": 1, "type": "step", "data": {}}) + "\n")
+        f.write(json.dumps({"v": 1, "seq": 1, "type": "rollout", "data": {}}) + "\n")
     events, restarted = reader.read()
     assert restarted, "file shrink should report a restart"
     assert len(events) == 1, events
@@ -173,37 +173,108 @@ def test_render(run_dir=None, out_path="monitor_preview.png"):
 
 def _synthetic():
     """Fallback data when no recorded run is available"""
-    import math
     import random
 
-    events = [{"v": 1, "seq": 0, "t": 0, "type": "session_start",
-               "data": {"run_id": "synthetic", "total_timesteps": 250000,
-                        "device": "cuda"}}]
+    LADDER = [1, 2, 3, 5, 8]
+    N_ACTIONS = 14
+
+    events = [{"v": 1, "seq": 0, "t": 0.0, "type": "session_start",
+               "data": {"run_id": "synthetic", "total_timesteps": 400_000_000,
+                        "device": "cuda", "num_envs": 2048, "rollout_len": 128,
+                        "policy_params": 1_100_000, "win_ante": 1}}]
+
+    seq = 0
     t = 0.0
     step = 0
-    for episode in range(60):
-        for i in range(17):
-            step += 1
-            action = 1 if i % 3 else (2 if i % 2 else 3)
-            wait = 0.006 if action == 1 else (0.19 if action == 2 else 0.09)
-            wait *= random.uniform(0.8, 1.2)
-            t += wait
-            events.append({"v": 1, "seq": step, "t": t, "type": "step", "data": {
-                "episode": episode, "step": i, "total_step": step, "action": action,
-                "reward": random.uniform(-1, 2), "chips": min(300, i * 22),
-                "blind_chips": 300, "hands_left": max(0, 4 - i // 4),
-                "discards_left": max(0, 3 - i // 5), "hand_type": "Pair",
-                "retry_count": 1 if random.random() < 0.03 else 0,
-                "timings": {"t_map": 2e-5, "t_send": 8e-5, "t_wait": wait,
-                            "t_obs": 9e-5, "t_reward": 1e-5},
-                "game_timing": {"gamespeed": 100, "drain_passes": 14},
-            }})
-        won = random.random() < 0.12
-        events.append({"v": 1, "seq": step, "t": t, "type": "episode_end", "data": {
-            "episode": episode, "outcome": "win" if won else "loss", "steps": 17,
-            "reward": random.uniform(40, 95) if won else random.uniform(-25, -10),
-            "chips": 320 if won else 180, "blind_chips": 300, "wall_time": 3.2,
-        }})
+    rung = 0
+    beta = 1.0
+    batch = 2048 * 128
+    next_promo = 4_000_000
+    next_milestone = 20_000_000
+
+    def add(kind, data):
+        nonlocal seq
+        seq += 1
+        events.append({"v": 1, "seq": seq, "t": t, "type": kind, "data": data})
+
+    for iteration in range(1, 220):
+        step += batch
+        t += 26.0
+        beta = max(0.1, beta - 0.004)
+        goal = LADDER[rung]
+        # Win rate climbs toward the promotion threshold, then resets a rung up
+        progress = min(1.0, (step % 40_000_000) / 30_000_000)
+        win = min(0.95, 0.05 + progress * 0.75 + random.uniform(-0.04, 0.04))
+
+        counts = [0] * N_ACTIONS
+        for action, weight in ((0, 34), (1, 18), (2, 9), (3, 3), (4, 9),
+                               (5, 11), (6, 4), (7, 9), (8, 5), (9, 1),
+                               (10, 1), (11, 4), (12, 2)):
+            counts[action] = int(batch * weight / 110)
+
+        add("rollout", {
+            "iteration": iteration, "global_step": step,
+            "sps": int(random.uniform(9500, 10500)),
+            "loss": random.uniform(0.2, 0.6), "pg_loss": random.uniform(-0.05, 0.05),
+            "v_loss": max(0.02, 1.2 - iteration * 0.004) + random.uniform(0, 0.05),
+            "entropy": max(0.4, 2.4 - iteration * 0.008),
+            "approx_kl": random.uniform(0.004, 0.022),
+            "clipfrac": random.uniform(0.05, 0.22),
+            "ep_return_mean": -4 + progress * 22 + random.uniform(-1.5, 1.5),
+            "ep_length_mean": 60 + progress * 180,
+            "ep_ante_mean": 1 + progress * (goal - 1) + random.uniform(-0.2, 0.2),
+            "ep_win_rate": win,
+            "win_ante": goal,
+            "shaping_beta": beta,
+            "snapshot_fraction": max(0.0, 0.3 - iteration * 0.0015),
+            "ep_from_snapshot_share": max(0.0, 0.3 - iteration * 0.0015)
+                                      + random.uniform(-0.02, 0.02),
+            "action_counts": counts,
+        })
+
+        for _ in range(6):
+            won = random.random() < win
+            add("episode_end", {
+                "step": step,
+                "r": random.uniform(15, 40) if won else random.uniform(-8, 6),
+                "l": random.randint(40, 260),
+                "ante": goal if won else random.randint(1, max(1, goal)),
+                "won": won, "from_snapshot": random.random() < 0.2,
+            })
+
+        if step >= next_promo:
+            next_promo += 4_000_000
+            rate = win + random.uniform(-0.03, 0.03)
+            add("promotion_eval", {
+                "step": step, "win_ante": goal, "win_rate": rate,
+                "episodes": 256, "threshold": 0.7, "elapsed": 4.1,
+            })
+            if rate >= 0.7 and rung < len(LADDER) - 1:
+                add("curriculum_promotion", {
+                    "step": step, "from_ante": goal, "to_ante": LADDER[rung + 1],
+                    "win_rate": rate, "threshold": 0.7,
+                })
+                rung += 1
+
+        if step >= next_milestone:
+            next_milestone += 20_000_000
+            rate = min(0.72, progress * 0.5 * (rung + 1) / len(LADDER))
+            add("milestone_eval", {
+                "step": step, "win_ante": 8, "win_rate": rate,
+                "ante_mean": 3 + rate * 5, "return_mean": 8 + rate * 20,
+                "length_mean": 240, "episodes": 512, "elapsed": 31.0,
+                "ante_hist": {str(a): random.randint(4, 90) for a in range(1, 9)},
+            })
+
+        if iteration % 40 == 0:
+            add("checkpoint_saved", {
+                "step": step, "iteration": iteration,
+                "path": f"runs/synthetic/ckpt_{step}.pt", "win_ante": goal,
+            })
+
+    add("session_end", {"step": step, "iteration": 219, "status": "stopped",
+                        "final_checkpoint": f"runs/synthetic/ckpt_{step}.pt",
+                        "elapsed": t})
     return events
 
 

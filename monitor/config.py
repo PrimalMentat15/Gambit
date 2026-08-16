@@ -20,27 +20,32 @@ class MonitorConfig:
     Runtime settings for the monitor application
 
     Attributes:
-        runs_dir: Parent directory holding run directories
+        runs_dir: Parent directory holding run directories. The trainer runs
+            with train/ as its working directory and a relative log_dir, so the
+            runs land under train/runs by default.
+        train_dir: Working directory the trainer is launched from.
+        config_path: Trainer YAML config, relative to train_dir.
         poll_ms: How often the tail thread checks the event file for new bytes
-        redraw_hz: Panel repaint rate. Deliberately low: the trainer produces a
-            few events per second, so 10 Hz is already heavily oversampled and
-            painting is the only part of the monitor that costs real CPU.
-        history: Ring buffer length per series. A 33h run at 15 steps/sec is
-            ~1.8M steps, so buffers must be bounded.
+        redraw_hz: Panel repaint rate. Deliberately low: the trainer emits one
+            rollout event per iteration and a few hundred episode events per
+            second, so 10 Hz is already oversampled and painting is the only
+            part of the monitor that costs real CPU.
+        history: Ring buffer length per series. A multi-day run is millions of
+            steps, so buffers must be bounded.
         max_plot_points: Series longer than this are decimated before drawing.
         panels: Panel names to show, in order. Empty means every discovered panel.
         follow_latest: Automatically switch to the newest run when one appears.
-        balatro_exe: Path to Balatro.exe, used by the Stage 3 supervisor.
     """
 
-    runs_dir: str = "runs"
+    runs_dir: str = os.path.join("train", "runs")
+    train_dir: str = "train"
+    config_path: str = os.path.join("configs", "m3_fast.yaml")
     poll_ms: int = 100
     redraw_hz: float = 10.0
     history: int = 20000
     max_plot_points: int = 2000
     panels: List[str] = field(default_factory=list)
     follow_latest: bool = True
-    balatro_exe: str = r"C:\Games\Balatro.v1.0.1N\game\Balatro.exe"
 
     @property
     def redraw_ms(self) -> int:

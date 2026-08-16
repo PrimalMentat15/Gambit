@@ -18,9 +18,9 @@
     --muted: #898781;
     --grid: #2c2c2a;
     --axis: #383835;
-    --series-1: #3987e5;   /* SELECT_HAND */
-    --series-2: #d95926;   /* PLAY_HAND */
-    --series-3: #199e70;   /* DISCARD_HAND */
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
     --good: #0ca30c;
     --warning: #fab219;
     --critical: #d03b3b;
@@ -78,43 +78,41 @@
 </header>
 
 <div class="tiles">
+  <div class="tile"><div class="cap">ante-8 argmax</div><div class="val" id="milestone">--</div></div>
+  <div class="tile"><div class="cap">win rate (at goal)</div><div class="val" id="winrate">--</div></div>
   <div class="tile"><div class="cap">steps / sec</div><div class="val" id="rate">--</div></div>
   <div class="tile"><div class="cap">steps</div><div class="val" id="steps">--</div></div>
   <div class="tile"><div class="cap">est. remaining</div><div class="val" id="eta">--</div></div>
-  <div class="tile"><div class="cap">win rate</div><div class="val" id="winrate">--</div></div>
-  <div class="tile"><div class="cap">episodes</div><div class="val" id="episodes">--</div></div>
-  <div class="tile"><div class="cap">mean reward</div><div class="val" id="reward">--</div></div>
+  <div class="tile"><div class="cap">mean return</div><div class="val" id="return">--</div></div>
 </div>
 
 <section>
-  <h2>Chips vs blind</h2>
+  <h2>Curriculum ladder</h2>
   <div class="card">
-    <div class="meter"><div class="meter-fill" id="chipfill" style="width:0%"></div>
-      <div class="meter-text" id="chiptext">--</div></div>
+    <div class="meter"><div class="meter-fill" id="ladderfill" style="width:0%"></div>
+      <div class="meter-text" id="laddertext">--</div></div>
     <div style="margin-top:10px;color:var(--ink-2);font-size:12px">
-      hands left <b id="hands">--</b> &nbsp;·&nbsp; discards left <b id="discards">--</b>
+      mean ante <b id="ante">--</b> &nbsp;·&nbsp;
+      promotions <b id="promotions">--</b> &nbsp;·&nbsp;
+      episodes <b id="episodes">--</b>
     </div>
   </div>
 </section>
 
 <section>
-  <h2>Mean wait by action</h2>
-  <div class="card" id="actions"><div class="empty">waiting for data…</div></div>
+  <h2>Optimiser</h2>
+  <div class="card" id="optimiser"><div class="empty">waiting for data…</div></div>
 </section>
 
 <section>
-  <h2>Recent episode reward</h2>
+  <h2>Mean episode return</h2>
   <div class="card"><svg id="spark" viewBox="0 0 600 130" preserveAspectRatio="none"></svg></div>
 </section>
 
 <footer>Read-only view. Starting, stopping and killing runs are not exposed here.</footer>
 
 <script>
-const ACTION_COLORS = {
-  SELECT_HAND: "var(--series-1)",
-  PLAY_HAND: "var(--series-2)",
-  DISCARD_HAND: "var(--series-3)",
-};
+const LADDER = [1, 2, 3, 5, 8];
 
 function duration(s) {
   if (!s || s <= 0) return "--";
@@ -127,42 +125,56 @@ function duration(s) {
 function num(n) { return (n || 0).toLocaleString(); }
 
 function render(d) {
-  document.getElementById("run").textContent = d.run_id;
-  document.getElementById("rate").textContent = d.rate ? d.rate.toFixed(2) : "--";
+  document.getElementById("run").textContent = d.run_id + "  ·  " + d.status;
+  document.getElementById("rate").textContent = d.rate ? num(Math.round(d.rate)) : "--";
   document.getElementById("steps").textContent = num(d.steps);
   document.getElementById("eta").textContent = duration(d.eta_seconds);
   document.getElementById("episodes").textContent = num(d.episodes);
-  document.getElementById("reward").textContent = d.rewards.length ? d.mean_reward.toFixed(1) : "--";
+  document.getElementById("promotions").textContent = num(d.promotions);
+  document.getElementById("ante").textContent = d.ante_mean ? d.ante_mean.toFixed(2) : "--";
+  document.getElementById("return").textContent =
+    d.returns.length ? d.mean_return.toFixed(2) : "--";
 
-  const wr = document.getElementById("winrate");
-  wr.textContent = d.episodes ? d.win_rate.toFixed(1) + "%" : "--";
-  wr.style.color = !d.episodes ? "var(--ink)"
-    : d.win_rate >= 25 ? "var(--good)" : d.win_rate >= 5 ? "var(--warning)" : "var(--critical)";
+  // The comparable-across-the-run number, so it gets the status colour: the
+  // certified reference policy sits at 71%.
+  const ms = document.getElementById("milestone");
+  ms.textContent = d.milestone_step ? d.milestone_win_rate.toFixed(1) + "%" : "--";
+  ms.style.color = !d.milestone_step ? "var(--ink)"
+    : d.milestone_win_rate >= 50 ? "var(--good)"
+    : d.milestone_win_rate >= 10 ? "var(--warning)" : "var(--critical)";
 
-  const pct = d.blind_chips ? Math.min(100, d.chips / d.blind_chips * 100) : 0;
-  const fill = document.getElementById("chipfill");
+  // Training win rate is measured against whatever the current goal is, so it
+  // is left uncoloured -- a status hue would imply a comparison it cannot bear.
+  document.getElementById("winrate").textContent =
+    d.iteration ? d.win_rate.toFixed(1) + "%" : "--";
+
+  const rung = LADDER.indexOf(d.win_ante);
+  const pct = rung < 0 ? 0 : rung / (LADDER.length - 1) * 100;
+  const fill = document.getElementById("ladderfill");
   fill.style.width = pct + "%";
-  fill.classList.toggle("done", pct >= 100);
-  document.getElementById("chiptext").textContent =
-    num(d.chips) + " / " + num(d.blind_chips) + "  (" + Math.round(pct) + "%)";
-  document.getElementById("hands").textContent = d.hands_left;
-  document.getElementById("discards").textContent = d.discards_left;
+  fill.classList.toggle("done", d.win_ante === LADDER[LADDER.length - 1]);
+  document.getElementById("laddertext").textContent = rung < 0
+    ? "curriculum off"
+    : "ante " + d.win_ante + "   (rung " + (rung + 1) + " of " + LADDER.length + ")";
 
-  const box = document.getElementById("actions");
-  if (!d.actions.length) {
+  const box = document.getElementById("optimiser");
+  if (!d.iteration) {
     box.innerHTML = '<div class="empty">waiting for data…</div>';
   } else {
-    const worst = Math.max(...d.actions.map(a => a.mean_ms), 1);
-    box.innerHTML = d.actions.map(a => `
+    const rows = [
+      ["entropy", d.entropy, 4],
+      ["approx KL", d.approx_kl, 5],
+      ["shaping beta", d.shaping_beta, 3],
+    ].filter(r => r[1] !== null && r[1] !== undefined);
+    box.innerHTML = rows.map(([name, value, digits]) => `
       <div class="bar-row">
-        <span class="bar-name">${a.name.replace("_HAND", "")}</span>
-        <span class="bar-track"><span class="bar-fill" style="width:${a.mean_ms / worst * 100}%;
-          background:${ACTION_COLORS[a.name] || "var(--series-1)"}"></span></span>
-        <span class="bar-val">${a.mean_ms.toFixed(0)} ms</span>
+        <span class="bar-name">${name}</span>
+        <span></span>
+        <span class="bar-val">${value.toFixed(digits)}</span>
       </div>`).join("");
   }
 
-  sparkline(d.rewards);
+  sparkline(d.returns);
 }
 
 function sparkline(values) {

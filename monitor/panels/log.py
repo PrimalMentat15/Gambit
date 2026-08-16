@@ -1,9 +1,10 @@
 """
 Event log panel
 
-A readable tail of the notable events: episode outcomes, wins, connection
-changes and session boundaries. Step events are excluded -- at 15 steps/sec they
-would bury everything worth reading.
+A readable tail of the notable events: iteration summaries, evaluations,
+promotions, checkpoints and session boundaries. Episode events are excluded --
+hundreds finish per second, and they would bury everything worth reading, which
+is the same reason the pre-sim version excluded per-step events.
 
 This is also the table-view escape hatch for the dashboard: every value here is
 text, so nothing depends on colour or on hovering a mark.
@@ -25,8 +26,9 @@ class LogPanel(Panel):
 
     NAME = "log"
     TITLE = "Event log"
-    EVENT_TYPES = frozenset({"episode_end", "game", "comm", "session_start",
-                             "session_end", "rollout", "log"})
+    EVENT_TYPES = frozenset({"session_start", "session_end", "rollout",
+                             "promotion_eval", "curriculum_promotion",
+                             "milestone_eval", "checkpoint_saved", "log"})
     SIZE = (560, 220)
 
     MAX_LINES = 500
@@ -67,35 +69,44 @@ class LogPanel(Panel):
             return "  ".join(parts)
 
         if kind == "session_end":
-            return f"SESSION END  status={data.get('status')}"
-
-        if kind == "episode_end":
-            outcome = str(data.get("outcome", "?")).upper()
-            return (f"episode {data.get('episode')} {outcome}  "
-                    f"steps={data.get('steps')} "
-                    f"reward={data.get('reward'):+.1f} "
-                    f"chips={data.get('chips')}/{data.get('blind_chips')}")
-
-        if kind == "game":
-            if data.get("event") == "episode_win":
-                return (f"WIN  {data.get('final_chips')} chips in "
-                        f"{data.get('hands_used')} hands")
-            if data.get("event") == "win_rate":
-                return (f"win rate {data.get('win_rate')}%  "
-                        f"({data.get('wins')}/{data.get('episode')})")
-            return f"game: {data.get('event')}"
-
-        if kind == "comm":
-            return f"comm: {data.get('event')}"
+            return (f"SESSION END  status={data.get('status')}  "
+                    f"step={data.get('step', 0):,}")
 
         if kind == "rollout":
-            parts = [f"rollout {data.get('iteration')}",
-                     f"steps={data.get('timesteps'):,}"]
-            if data.get("ep_rew_mean") is not None:
-                parts.append(f"ep_rew_mean={data['ep_rew_mean']:.2f}")
-            if data.get("train/loss") is not None:
-                parts.append(f"loss={data['train/loss']:.4f}")
+            parts = [f"iter {data.get('iteration')}",
+                     f"step={data.get('global_step', 0):,}",
+                     f"sps={data.get('sps', 0):,}"]
+            for label, key, fmt in (
+                ("ep_ret", "ep_return_mean", "{:.2f}"),
+                ("ante", "ep_ante_mean", "{:.2f}"),
+                ("win", "ep_win_rate", "{:.2f}"),
+                ("loss", "loss", "{:.4f}"),
+                ("kl", "approx_kl", "{:.5f}"),
+            ):
+                if data.get(key) is not None:
+                    parts.append(f"{label}={fmt.format(data[key])}")
+            if data.get("win_ante") is not None:
+                parts.append(f"goal={data['win_ante']}")
             return "  ".join(parts)
+
+        if kind == "promotion_eval":
+            return (f"promo eval  ante {data.get('win_ante')}  "
+                    f"win={data.get('win_rate', 0) * 100:.1f}% "
+                    f"over {data.get('episodes')} eps "
+                    f"(need {data.get('threshold', 0) * 100:.0f}%)")
+
+        if kind == "curriculum_promotion":
+            return (f"PROMOTION  {data.get('from_ante')} -> {data.get('to_ante')}  "
+                    f"win={data.get('win_rate', 0) * 100:.1f}%")
+
+        if kind == "milestone_eval":
+            return (f"MILESTONE  ante-8 win={data.get('win_rate', 0) * 100:.1f}%  "
+                    f"ante_mean={data.get('ante_mean', 0):.2f}  "
+                    f"return={data.get('return_mean', 0):.2f}  "
+                    f"({data.get('episodes')} eps)")
+
+        if kind == "checkpoint_saved":
+            return f"checkpoint  step={data.get('step', 0):,}  {data.get('path')}"
 
         if kind == "log":
             return str(data.get("message", ""))

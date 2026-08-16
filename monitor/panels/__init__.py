@@ -16,12 +16,13 @@ __all__ = ["Panel", "RingSeries", "StatTile", "discover", "build_panels"]
 # Default display order. Panels found but not listed here are appended
 # alphabetically, so a newly dropped-in file still shows up.
 DEFAULT_ORDER = [
-    "throughput",
-    "latency_action",
-    "latency_time",
-    "reward",
+    "milestone",
+    "curriculum",
     "winrate",
-    "gamestate",
+    "reward",
+    "losses",
+    "anneal",
+    "throughput",
     "actions",
     "log",
 ]

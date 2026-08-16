@@ -23,9 +23,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from ai.telemetry import find_latest_run  # noqa: E402
+import monitor  # noqa: F401  (puts train/ on sys.path)
+from balatro_train.telemetry import find_latest_run  # noqa: E402
 from monitor.bus import TailReader  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -68,11 +67,13 @@ class State:
         self.steps = 0
         self.episodes = 0
         self.wins = 0
-        self.rewards = []
-        self.rate_samples = []
-        self.action_wait = {}
-        self.last_step = {}
+        self.returns = []
+        self.rate = 0.0
+        self.latest = {}
+        self.milestone = {}
+        self.promotions = 0
         self.target = 0
+        self.status = None
 
     def poll(self) -> None:
         """Follow the newest run and absorb anything new"""
@@ -102,65 +103,60 @@ class State:
         if kind == "session_start":
             self.target = data.get("total_timesteps", 0) or 0
 
-        elif kind == "step":
-            self.steps += 1
-            self.last_step = data
-            stamp = event.get("t")
-            if stamp:
-                self.rate_samples.append(stamp)
-                if len(self.rate_samples) > 60:
-                    self.rate_samples = self.rate_samples[-60:]
-
-            action = data.get("action")
-            wait = (data.get("timings") or {}).get("t_wait")
-            if action is not None and wait is not None:
-                bucket = self.action_wait.setdefault(action, [0, 0.0])
-                bucket[0] += 1
-                bucket[1] += wait
+        elif kind == "rollout":
+            self.latest = data
+            self.steps = data.get("global_step", self.steps)
+            # sps_inst (rate over the last iteration) when present; sps
+            # (session average) for older streams. See ppo.py's train loop.
+            self.rate = float(data.get("sps_inst") or data.get("sps") or 0)
+            if data.get("ep_return_mean") is not None:
+                self.returns.append(data["ep_return_mean"])
+                if len(self.returns) > 400:
+                    self.returns = self.returns[-400:]
 
         elif kind == "episode_end":
             self.episodes += 1
-            if data.get("outcome") == "win":
+            if data.get("won"):
                 self.wins += 1
-            if data.get("reward") is not None:
-                self.rewards.append(data["reward"])
-                if len(self.rewards) > 400:
-                    self.rewards = self.rewards[-400:]
+
+        elif kind == "milestone_eval":
+            self.milestone = data
+
+        elif kind == "curriculum_promotion":
+            self.promotions += 1
+
+        elif kind == "session_end":
+            self.status = data.get("status")
 
     def snapshot(self) -> dict:
         """Everything the page needs, as plain JSON"""
-        rate = 0.0
-        if len(self.rate_samples) >= 2:
-            span = self.rate_samples[-1] - self.rate_samples[0]
-            if span > 0:
-                rate = (len(self.rate_samples) - 1) / span
-
         remaining = max(0, self.target - self.steps)
-        eta = remaining / rate if rate > 0 and remaining else 0
+        eta = remaining / self.rate if self.rate > 0 and remaining else 0
 
-        names = {1: "SELECT_HAND", 2: "PLAY_HAND", 3: "DISCARD_HAND"}
-        actions = [
-            {"name": names.get(a, str(a)), "mean_ms": total / count * 1000, "count": count}
-            for a, (count, total) in sorted(self.action_wait.items())
-        ]
-
-        recent = self.rewards[-120:]
+        recent = self.returns[-120:]
         return {
             "run_id": self.run_id or "-",
+            "status": self.status or ("running" if self.steps else "-"),
             "steps": self.steps,
             "target": self.target,
+            "iteration": self.latest.get("iteration", 0),
             "episodes": self.episodes,
             "wins": self.wins,
-            "win_rate": (self.wins / self.episodes * 100) if self.episodes else 0.0,
-            "rate": rate,
+            # Training win rate is against the current curriculum goal; the
+            # milestone below is the one comparable across the whole run.
+            "win_rate": (self.latest.get("ep_win_rate") or 0) * 100,
+            "win_ante": self.latest.get("win_ante"),
+            "promotions": self.promotions,
+            "milestone_win_rate": (self.milestone.get("win_rate") or 0) * 100,
+            "milestone_step": self.milestone.get("step", 0),
+            "ante_mean": self.latest.get("ep_ante_mean", 0),
+            "rate": self.rate,
             "eta_seconds": eta,
-            "mean_reward": (sum(recent) / len(recent)) if recent else 0.0,
-            "rewards": recent,
-            "actions": actions,
-            "chips": self.last_step.get("chips", 0),
-            "blind_chips": self.last_step.get("blind_chips", 0),
-            "hands_left": self.last_step.get("hands_left", 0),
-            "discards_left": self.last_step.get("discards_left", 0),
+            "mean_return": (sum(recent) / len(recent)) if recent else 0.0,
+            "returns": recent,
+            "entropy": self.latest.get("entropy", 0),
+            "approx_kl": self.latest.get("approx_kl", 0),
+            "shaping_beta": self.latest.get("shaping_beta"),
         }
 
 
@@ -250,7 +246,7 @@ def main(argv=None) -> int:
     parser.add_argument("--host", default="127.0.0.1",
                         help="Bind address. Use 0.0.0.0 to allow other devices on your LAN.")
     parser.add_argument("--port", type=int, default=8770)
-    parser.add_argument("--runs-dir", default="runs")
+    parser.add_argument("--runs-dir", default=os.path.join("train", "runs"))
     args = parser.parse_args(argv)
 
     Handler.state = State(args.runs_dir)

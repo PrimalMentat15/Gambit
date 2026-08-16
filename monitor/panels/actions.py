@@ -1,11 +1,17 @@
 """
 Action distribution panel
 
-How often the policy picks each action, plus how often actions had to be retried.
+How the policy spends its actions across the game's 14 action types, as a share
+of the most recent rollout.
 
-Retries are the interesting signal: a rising retry count means the agent is
-choosing actions the game then rejects, which is a masking problem rather than a
-learning one.
+A share rather than a running total: totals only ever grow, so after an hour
+every bar is dominated by whatever the policy did early on and the chart stops
+responding to what it is doing now. The share answers the question actually
+being asked -- is it stuck rerolling, is it skipping every pack -- and the step
+count that produced it is on a tile so the share is never read without its n.
+
+Bars are coloured by game phase, not per action: 14 types against 8 categorical
+slots would collide, and phase is the grouping worth seeing anyway.
 """
 
 from typing import Any, Dict
@@ -18,17 +24,16 @@ from .base import Panel, StatTile
 
 
 class ActionDistPanel(Panel):
-    """Action counts with a retry tally"""
+    """Per-rollout action-type shares"""
 
     NAME = "actions"
     TITLE = "Action distribution"
-    EVENT_TYPES = frozenset({"step"})
-    SIZE = (420, 230)
+    EVENT_TYPES = frozenset({"rollout"})
+    SIZE = (560, 260)
 
     def __init__(self, config, parent=None):
         super().__init__(config, parent)
-        self.counts: Dict[int, int] = {}
-        self.retries = 0
+        self.counts: list = []
         self.steps = 0
         self.bars = None
         self.labels: list = []
@@ -43,12 +48,12 @@ class ActionDistPanel(Panel):
         row = QHBoxLayout(tiles)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
-        self.tile_steps = StatTile("steps")
-        self.tile_retries = StatTile("retries")
+        self.tile_steps = StatTile("actions this rollout")
+        self.tile_types = StatTile("types used")
         row.addWidget(self.tile_steps)
-        row.addWidget(self.tile_retries)
+        row.addWidget(self.tile_types)
 
-        self.plot = theme.make_plot(y_label="count")
+        self.plot = theme.make_plot(y_label="share of rollout (%)")
         item = self.plot.getPlotItem()
         item.showGrid(x=False, y=True, alpha=0.12)
 
@@ -57,21 +62,13 @@ class ActionDistPanel(Panel):
         return container
 
     def on_event(self, event: Dict[str, Any]) -> None:
-        data = event["data"]
-        action = data.get("action")
-        if action is not None:
-            self.counts[action] = self.counts.get(action, 0) + 1
-        self.steps += 1
-        if data.get("retry_count"):
-            self.retries += 1
+        counts = event["data"].get("action_counts")
+        if not counts:
+            return
+        self.counts = counts
+        self.steps = sum(counts)
 
     def redraw(self) -> None:
-        self.tile_steps.set_value(f"{self.steps:,}")
-        self.tile_retries.set_value(
-            f"{self.retries:,}",
-            theme.STATUS["warning"] if self.retries else None,
-        )
-
         item = self.plot.getPlotItem()
         if self.bars is not None:
             item.removeItem(self.bars)
@@ -80,17 +77,26 @@ class ActionDistPanel(Panel):
             item.removeItem(label)
         self.labels.clear()
 
-        if not self.counts:
+        if not self.steps:
+            self.tile_steps.set_value("--")
+            self.tile_types.set_value("--")
             return
 
-        actions = sorted(self.counts)
-        positions = list(range(len(actions)))
-        values = [self.counts[a] for a in actions]
-        colors = [theme.ACTION_COLORS.get(a, theme.SERIES[7]) for a in actions]
+        # Reserved slots the policy never selects would be permanent empty
+        # bars, so only types that actually occurred get an axis position.
+        used = [(a, c) for a, c in enumerate(self.counts) if c]
+        self.tile_steps.set_value(f"{self.steps:,}")
+        self.tile_types.set_value(f"{len(used)}")
+
+        positions = list(range(len(used)))
+        shares = [c / self.steps * 100.0 for _a, c in used]
+        colors = [
+            theme.ACTION_COLORS.get(a, theme.SERIES[7]) for a, _c in used
+        ]
 
         self.bars = pg.BarGraphItem(
             x=positions,
-            height=values,
+            height=shares,
             # Leaves a gap between adjacent bars instead of drawing a border
             # around each one to separate them
             width=0.62,
@@ -99,22 +105,28 @@ class ActionDistPanel(Panel):
         )
         item.addItem(self.bars)
 
+        # Short labels: 13 full action names side by side overlap into an
+        # unreadable band at any width the panel actually gets.
         ticks = [
-            (pos, theme.ACTION_NAMES.get(a, str(a)).replace("_HAND", ""))
-            for pos, a in zip(positions, actions)
+            (pos, theme.ACTION_SHORT.get(a, str(a)))
+            for pos, (a, _c) in zip(positions, used)
         ]
         item.getAxis("bottom").setTicks([ticks])
 
-        tallest = max(values)
-        for pos, value in zip(positions, values):
-            label = pg.TextItem(f"{value:,}", color=theme.INK_2, anchor=(0.5, 1))
-            label.setPos(pos, value + tallest * 0.04)
+        tallest = max(shares)
+        for pos, share in zip(positions, shares):
+            # Every bar here has a nonzero count, so a label must never read
+            # "0": a rare action rounds to zero percent and would look like it
+            # never fired. Sub-1% shares keep a decimal instead.
+            text = f"{share:.1f}" if share < 1 else f"{share:.0f}"
+            label = pg.TextItem(text, color=theme.INK_2, anchor=(0.5, 1))
+            label.setPos(pos, share + tallest * 0.04)
             item.addItem(label)
             self.labels.append(label)
 
-        item.setYRange(0, tallest * 1.2)
+        # Headroom for the value labels, which sit above their bars
+        item.setYRange(0, tallest * 1.32)
 
     def clear(self) -> None:
-        self.counts.clear()
-        self.retries = 0
+        self.counts = []
         self.steps = 0

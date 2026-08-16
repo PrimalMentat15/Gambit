@@ -1,20 +1,19 @@
 """
 Post-run analysis
 
-Reads a finished run from three sources and returns plain Python structures, so
-this module stays testable and has no Qt dependency.
+Reads a finished run's event stream and TensorBoard scalars, returning plain
+Python structures, so this module stays testable and has no Qt dependency.
 
 TensorBoard event files are read directly with EventAccumulator rather than by
 launching the TensorBoard server, which is what lets post-run evaluation live in
 the same window as the live view.
 """
 
-import csv
 import os
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
-from ai.tools.reader import read_events
+from balatro_train.tools.reader import read_events
 
 
 def load_scalars(run_dir: str) -> Dict[str, List[Tuple[int, float]]]:
@@ -22,14 +21,13 @@ def load_scalars(run_dir: str) -> Dict[str, List[Tuple[int, float]]]:
     Read TensorBoard scalars for a run
 
     Args:
-        run_dir: Run directory containing a tb/ subdirectory
+        run_dir: Run directory holding the TensorBoard event files
 
     Returns:
         Mapping of tag to [(step, value), ...]. Empty if TensorBoard is not
         installed or the run has no event files.
     """
-    tb_dir = os.path.join(run_dir, "tb")
-    if not os.path.isdir(tb_dir):
+    if not os.path.isdir(run_dir):
         return {}
 
     try:
@@ -37,10 +35,11 @@ def load_scalars(run_dir: str) -> Dict[str, List[Tuple[int, float]]]:
     except ImportError:
         return {}
 
-    # SB3 nests each learn() call in its own subdirectory
-    candidates = [tb_dir] + [
-        os.path.join(tb_dir, name) for name in os.listdir(tb_dir)
-        if os.path.isdir(os.path.join(tb_dir, name))
+    # The trainer writes event files into the run directory itself; a nested
+    # tb/ is still accepted so runs written by other tooling load too.
+    candidates = [run_dir] + [
+        os.path.join(run_dir, name) for name in os.listdir(run_dir)
+        if os.path.isdir(os.path.join(run_dir, name))
     ]
 
     scalars: Dict[str, List[Tuple[int, float]]] = {}
@@ -60,57 +59,29 @@ def load_scalars(run_dir: str) -> Dict[str, List[Tuple[int, float]]]:
     return scalars
 
 
-def load_monitor_csv(run_dir: str) -> List[Dict[str, float]]:
-    """
-    Read the SB3 Monitor CSV
-
-    Returns:
-        List of {"r": reward, "l": length, "t": wall_time}
-    """
-    path = os.path.join(run_dir, "monitor.csv")
-    if not os.path.isfile(path):
-        return []
-
-    rows = []
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            # First line is a JSON comment written by Monitor
-            first = handle.readline()
-            if not first.startswith("#"):
-                handle.seek(0)
-            for row in csv.DictReader(handle):
-                try:
-                    rows.append({
-                        "r": float(row["r"]),
-                        "l": float(row["l"]),
-                        "t": float(row["t"]),
-                    })
-                except (KeyError, TypeError, ValueError):
-                    continue
-    except OSError:
-        return []
-    return rows
-
-
 def summarize_run(run_dir: str) -> Dict[str, Any]:
     """
     Aggregate one run's event stream
 
     Returns:
-        Dict with episode outcomes, reward components, hand types, action costs
-        and headline counters
+        Dict with episode outcomes, terminal antes, action-type totals,
+        curriculum history and headline counters
     """
     events_path = os.path.join(run_dir, "events.jsonl")
     summary: Dict[str, Any] = {
         "episodes": 0,
         "wins": 0,
         "steps": 0,
-        "rewards": [],
-        "components": Counter(),
-        "hand_types": defaultdict(lambda: {"count": 0, "chips": 0}),
-        "action_wait": defaultdict(lambda: {"count": 0, "total": 0.0}),
+        "iterations": 0,
+        "returns": [],
+        "antes": Counter(),
+        "action_counts": Counter(),
+        "promotions": [],
+        "milestones": [],
+        "win_ante": None,
         "wall_time": 0.0,
-        "best_chips": 0,
+        "best_ante": 0,
+        "status": None,
     }
 
     if not os.path.isfile(events_path):
@@ -125,58 +96,66 @@ def summarize_run(run_dir: str) -> Dict[str, Any]:
             first_t = first_t if first_t is not None else stamp
             last_t = stamp
 
-        if kind == "step":
-            summary["steps"] += 1
-
-            action = data.get("action")
-            wait = (data.get("timings") or {}).get("t_wait")
-            if action is not None and wait is not None:
-                bucket = summary["action_wait"][action]
-                bucket["count"] += 1
-                bucket["total"] += wait
-
-            for line in data.get("reward_components") or []:
-                # Components are formatted strings; the label before the colon
-                # is the stable part worth counting
-                label = line.split(":")[0].strip()
-                if label:
-                    summary["components"][label] += 1
-
-        elif kind == "episode_end":
+        if kind == "episode_end":
             summary["episodes"] += 1
-            if data.get("outcome") == "win":
+            if data.get("won"):
                 summary["wins"] += 1
-            if data.get("reward") is not None:
-                summary["rewards"].append(data["reward"])
-            summary["best_chips"] = max(summary["best_chips"], data.get("chips") or 0)
+            if data.get("r") is not None:
+                summary["returns"].append(data["r"])
+            ante = data.get("ante") or 0
+            summary["antes"][ante] += 1
+            summary["best_ante"] = max(summary["best_ante"], ante)
 
-            for hand in data.get("hands_played") or []:
-                entry = summary["hand_types"][hand.get("hand_type", "Unknown")]
-                entry["count"] += 1
-                entry["chips"] += hand.get("chips", 0) or 0
+        elif kind == "rollout":
+            summary["iterations"] += 1
+            summary["steps"] = data.get("global_step", summary["steps"])
+            if data.get("win_ante") is not None:
+                summary["win_ante"] = data["win_ante"]
+            # Per-rollout counts, so a run total is their sum
+            for action, count in enumerate(data.get("action_counts") or []):
+                if count:
+                    summary["action_counts"][action] += count
+
+        elif kind == "curriculum_promotion":
+            summary["promotions"].append(data)
+
+        elif kind == "milestone_eval":
+            summary["milestones"].append(data)
+
+        elif kind == "session_end":
+            summary["status"] = data.get("status")
 
     if first_t and last_t:
         summary["wall_time"] = last_t - first_t
 
-    summary["hand_types"] = dict(summary["hand_types"])
-    summary["action_wait"] = dict(summary["action_wait"])
+    summary["antes"] = dict(summary["antes"])
+    summary["action_counts"] = dict(summary["action_counts"])
     return summary
 
 
 def headline(summary: Dict[str, Any]) -> Dict[str, str]:
     """Format a summary into display strings"""
     episodes = summary["episodes"] or 1
-    rewards = summary["rewards"]
+    returns = summary["returns"]
+    milestones = summary["milestones"]
 
     return {
         "episodes": f"{summary['episodes']:,}",
         "steps": f"{summary['steps']:,}",
+        "iterations": f"{summary['iterations']:,}",
+        # Training win rate is against whatever curriculum goal was active at
+        # the time, so it is labelled as such wherever it is displayed.
         "win_rate": f"{summary['wins'] / episodes * 100:.1f}%",
-        "mean_reward": f"{sum(rewards) / len(rewards):.2f}" if rewards else "--",
-        "best_reward": f"{max(rewards):.1f}" if rewards else "--",
-        "best_chips": f"{summary['best_chips']:,}",
+        "mean_return": f"{sum(returns) / len(returns):.2f}" if returns else "--",
+        "best_return": f"{max(returns):.2f}" if returns else "--",
+        "best_ante": f"{summary['best_ante']}",
+        "win_ante": (f"ante {summary['win_ante']}"
+                     if summary["win_ante"] is not None else "--"),
+        "promotions": f"{len(summary['promotions'])}",
+        "milestone": (f"{milestones[-1].get('win_rate', 0) * 100:.1f}%"
+                      if milestones else "--"),
         "wall_time": _duration(summary["wall_time"]),
-        "steps_per_sec": (f"{summary['steps'] / summary['wall_time']:.2f}"
+        "steps_per_sec": (f"{summary['steps'] / summary['wall_time']:,.0f}"
                           if summary["wall_time"] else "--"),
     }
 

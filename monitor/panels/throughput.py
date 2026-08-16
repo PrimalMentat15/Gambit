@@ -1,15 +1,20 @@
 """
 Throughput panel
 
-Steps per second over time, plus the headline numbers a long run is judged on:
-current rate, total steps, and projected time remaining.
+Env steps per second over training steps, plus the headline numbers a long run
+is judged on: current rate, total steps, and projected time remaining.
 
-Deliberately separate from the latency panel: rate and latency have different
-units and scales, and putting them on one plot with two y-axes would invent a
-relationship the data does not contain.
+The trainer reports throughput once per iteration, so this reads that field
+rather than timing event arrivals -- an event-arrival rate would measure the
+monitor, not the trainer.
+
+Prefers ``sps_inst`` (rate over the last iteration) and falls back to ``sps``
+(session average) for streams written before ``sps_inst`` existed. The
+instantaneous rate is what the ETA needs: a session average carries the cost of
+every slow startup iteration for a long time afterwards, so an ETA built on it
+stays wrong for minutes after the run has settled.
 """
 
-import time
 from typing import Any, Dict
 
 from PySide6.QtWidgets import QGridLayout, QVBoxLayout, QWidget
@@ -23,18 +28,14 @@ class ThroughputPanel(Panel):
 
     NAME = "throughput"
     TITLE = "Throughput"
-    EVENT_TYPES = frozenset({"step", "session_start"})
+    EVENT_TYPES = frozenset({"rollout", "session_start"})
     SIZE = (480, 260)
-
-    WINDOW = 40  # steps averaged for the instantaneous rate
 
     def __init__(self, config, parent=None):
         super().__init__(config, parent)
         self.series = RingSeries(config.history)
-        self.recent: list = []
         self.total_steps = 0
         self.target_steps = 0
-        self.first_seen = None
         self.rate = 0.0
 
     def build(self) -> QWidget:
@@ -54,10 +55,10 @@ class ThroughputPanel(Panel):
         for column, tile in enumerate((self.tile_rate, self.tile_total, self.tile_eta)):
             grid.addWidget(tile, 0, column)
 
-        self.plot = theme.make_plot(y_label="steps/sec", x_label="step")
+        self.plot = theme.make_plot(y_label="steps/sec", x_label="env step")
         self.curve = self.plot.plot([], [], pen=theme.pen(theme.SERIES[0]))
         self.crosshair = theme.Crosshair(
-            self.plot, lambda x, y: f"step {x:.0f}   {y:.2f}/s"
+            self.plot, lambda x, y: f"step {x:,.0f}   {y:,.0f}/s"
         )
 
         layout.addWidget(tiles)
@@ -71,28 +72,21 @@ class ThroughputPanel(Panel):
             self.target_steps = data.get("total_timesteps", 0) or 0
             return
 
-        now = event.get("t") or time.time()
-        if self.first_seen is None:
-            self.first_seen = now
+        step = data.get("global_step")
+        sps = data.get("sps_inst", data.get("sps"))
+        if step is None or sps is None:
+            return
 
-        self.total_steps = data.get("total_step", self.total_steps + 1)
-
-        self.recent.append(now)
-        if len(self.recent) > self.WINDOW:
-            self.recent = self.recent[-self.WINDOW:]
-
-        if len(self.recent) >= 2:
-            span = self.recent[-1] - self.recent[0]
-            if span > 0:
-                self.rate = (len(self.recent) - 1) / span
-                self.series.append(self.total_steps, self.rate)
+        self.total_steps = step
+        self.rate = float(sps)
+        self.series.append(step, self.rate)
 
     def redraw(self) -> None:
         xs, ys = self.series.arrays(self.config.max_plot_points)
         self.curve.setData(xs, ys)
         self.crosshair.set_series(xs, ys)
 
-        self.tile_rate.set_value(f"{self.rate:.2f}" if self.rate else "--")
+        self.tile_rate.set_value(f"{self.rate:,.0f}" if self.rate else "--")
         self.tile_total.set_value(f"{self.total_steps:,}")
 
         remaining = self.target_steps - self.total_steps
@@ -116,8 +110,6 @@ class ThroughputPanel(Panel):
 
     def clear(self) -> None:
         self.series.clear()
-        self.recent.clear()
         self.total_steps = 0
         self.target_steps = 0
-        self.first_seen = None
         self.rate = 0.0

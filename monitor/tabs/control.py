@@ -13,7 +13,7 @@ from typing import Optional
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+    QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -58,25 +58,28 @@ class ControlTab(QWidget):
         form = QFormLayout(launch)
 
         self.run_name = QLineEdit("run")
+        self.config_path = QLineEdit(self.config.config_path)
+
+        # 0 means "use whatever the config says", which is the normal case --
+        # total_timesteps is part of the run's recipe, not a monitor setting.
         self.timesteps = QSpinBox()
-        self.timesteps.setRange(1000, 100_000_000)
-        self.timesteps.setSingleStep(10000)
-        self.timesteps.setValue(250000)
+        self.timesteps.setRange(0, 2_000_000_000)
+        self.timesteps.setSingleStep(1_000_000)
+        self.timesteps.setValue(0)
+        self.timesteps.setSpecialValueText("from config")
         self.timesteps.setGroupSeparatorShown(True)
 
         self.device = QComboBox()
         self.device.addItems(["auto", "cuda", "cpu"])
 
-        self.launch_game = QCheckBox("Also launch Balatro")
-        self.launch_game.setChecked(True)
-        self.resume = QCheckBox("Resume from latest checkpoint")
-        self.resume.setChecked(True)
+        self.resume = QLineEdit()
+        self.resume.setPlaceholderText("path to ckpt_*.pt (optional)")
 
         form.addRow("Run name", self.run_name)
+        form.addRow("Config", self.config_path)
         form.addRow("Timesteps", self.timesteps)
         form.addRow("Device", self.device)
-        form.addRow("", self.launch_game)
-        form.addRow("", self.resume)
+        form.addRow("Resume", self.resume)
 
         self.start_button = QPushButton("Start run")
         self.start_button.setStyleSheet(self._button_style(theme.SERIES[0]))
@@ -93,8 +96,8 @@ class ControlTab(QWidget):
 
         note = QLabel(
             "Closing this window leaves training running.\n"
-            "Stop checkpoints and exits cleanly; Kill is immediate\n"
-            "and also closes Balatro so the port is freed."
+            "Stop checkpoints and exits at the next iteration;\n"
+            "Kill is immediate and loses the current iteration."
         )
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {theme.MUTED}; font-size: 11px;")
@@ -144,10 +147,10 @@ class ControlTab(QWidget):
         device = self.device.currentText()
         self.supervisor.start(
             run_name=self.run_name.text().strip() or "run",
-            timesteps=self.timesteps.value(),
+            timesteps=self.timesteps.value() or None,
             device=None if device == "auto" else device,
-            launch_game=self.launch_game.isChecked(),
-            resume=self.resume.isChecked(),
+            config_path=self.config_path.text().strip() or None,
+            resume=self.resume.text().strip() or None,
         )
 
     def _append_message(self, text: str) -> None:
