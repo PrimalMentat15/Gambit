@@ -1,0 +1,29 @@
+# Tiny config: CPU-friendly smoke training on the mock env.
+# python -m balatro_train.ppo --config configs/debug.yaml
+seed: 1
+device: cpu
+bf16_rollout: false
+
+env:
+  name: mock
+  num_envs: 16
+  seed: 0
+
+policy:
+  d_model: 64
+  n_layers: 2
+  n_heads: 2
+  ffn_mult: 2
+  global_hidden: 128
+  value_hidden: 128
+
+ppo:
+  total_timesteps: 100000
+  rollout_len: 64
+  minibatch_size: 256
+  update_epochs: 2
+  lr: 1.0e-3
+
+log:
+  run_name: debug
+  save_every_iters: 50

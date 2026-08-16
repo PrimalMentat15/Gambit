@@ -1,0 +1,40 @@
+# Full-size config (plan hypers): RTX 4070, Rust vec-env once it lands.
+# Until then it also runs against the mock (slowly - the mock is Python).
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: mock        # switch to "sim" when the PyO3 vec-env lands
+  num_envs: 2048
+  seed: 0
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 1000000000
+  rollout_len: 128         # 2048 x 128 = 262k transitions / iter
+  minibatch_size: 32768
+  update_epochs: 4
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  lr: 3.0e-4
+  anneal_lr: true
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+log:
+  run_name: default
+  save_every_iters: 50
+  tensorboard: true
+  wandb: false

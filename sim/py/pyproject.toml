@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "balatro-sim"
+version = "0.1.0"
+description = "PyO3 vectorized Balatro environment over the balatro-core simulator (P6)"
+requires-python = ">=3.11"
+
+[tool.maturin]
+features = ["extension-module"]
+module-name = "balatro_sim"
+# Build in release by default: the vec-env is useless unoptimized.
+profile = "release"

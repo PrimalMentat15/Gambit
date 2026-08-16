@@ -1,0 +1,468 @@
+voucher	TUTORIAL	1	v_hieroglyph
+tags	TUTORIAL	1	tag_skip	tag_boss
+shop	TUTORIAL	1	1	Tarot:c_sun:none,Planet:c_uranus:none	p_buffoon_normal_1,p_standard_normal_3
+pack	TUTORIAL	1	1	p_buffoon_normal_1	Joker:j_gros_michel:none,Joker:j_astronomer:none
+pack	TUTORIAL	1	2	p_standard_normal_3	Base:c_base:none:H_6:Gold,Base:c_base:none:C_T:none,Base:c_base:none:H_T:none
+reroll	TUTORIAL	1	Joker:j_delayed_grat:none,Joker:j_chaos:none
+shop	TUTORIAL	2	1	Tarot:c_tower:none,Tarot:c_lovers:none	p_arcana_normal_2,p_arcana_jumbo_1
+pack	TUTORIAL	2	1	p_arcana_normal_2	Tarot:c_judgement:none,Tarot:c_chariot:none,Tarot:c_world:none
+pack	TUTORIAL	2	2	p_arcana_jumbo_1	Tarot:c_death:none,Tarot:c_moon:none,Tarot:c_empress:none,Tarot:c_world:none,Tarot:c_magician:none
+reroll	TUTORIAL	2	Joker:j_hiker:none,Joker:j_shoot_the_moon:none
+voucher	TUTORIAL	2	v_wasteful
+tags	TUTORIAL	2	tag_negative	tag_charm
+shop	TUTORIAL	3	2	Joker:j_ride_the_bus:none,Joker:j_campfire:none	p_standard_normal_3,p_standard_normal_1
+pack	TUTORIAL	3	1	p_standard_normal_3	Enhanced:m_gold:none:S_6:none,Base:c_base:none:S_9:none,Enhanced:m_bonus:none:S_A:none
+pack	TUTORIAL	3	2	p_standard_normal_1	Enhanced:m_glass:none:C_K:Gold,Base:c_base:none:S_4:Red,Enhanced:m_bonus:foil:S_9:none
+reroll	TUTORIAL	3	Joker:j_crazy:none,Joker:j_turtle_bean:none
+shop	TUTORIAL	4	2	Joker:j_blue_joker:none,Joker:j_red_card:none	p_standard_normal_2,p_standard_normal_1
+pack	TUTORIAL	4	1	p_standard_normal_2	Base:c_base:none:H_8:Blue,Base:c_base:none:H_7:none,Base:c_base:none:S_8:Purple
+pack	TUTORIAL	4	2	p_standard_normal_1	Enhanced:m_wild:none:S_7:none,Base:c_base:none:C_A:none,Base:c_base:holo:D_2:none
+reroll	TUTORIAL	4	Joker:j_dusk:none,Joker:j_brainstorm:none
+shop	TUTORIAL	5	2	Tarot:c_sun:none,Joker:j_midas_mask:none	p_spectral_mega_1,p_arcana_jumbo_2
+pack	TUTORIAL	5	1	p_spectral_mega_1	Spectral:c_grim:none,Spectral:c_aura:none,Spectral:c_hex:none,Spectral:c_ouija:none
+pack	TUTORIAL	5	2	p_arcana_jumbo_2	Tarot:c_hermit:none,Tarot:c_tower:none,Tarot:c_strength:none,Tarot:c_heirophant:none,Tarot:c_high_priestess:none
+reroll	TUTORIAL	5	Joker:j_photograph:none,Joker:j_selzer:none
+voucher	TUTORIAL	3	v_tarot_merchant
+tags	TUTORIAL	3	tag_ethereal	tag_negative
+shop	TUTORIAL	6	3	Joker:j_sock_and_buskin:none,Joker:j_drivers_license:none	p_spectral_normal_1,p_celestial_normal_4
+pack	TUTORIAL	6	1	p_spectral_normal_1	Spectral:c_sigil:none,Spectral:c_medium:none
+pack	TUTORIAL	6	2	p_celestial_normal_4	Planet:c_mars:none,Planet:c_neptune:none,Planet:c_earth:none
+reroll	TUTORIAL	6	Joker:j_blue_joker:negative,Joker:j_banner:none
+shop	TUTORIAL	7	3	Planet:c_venus:none,Joker:j_hallucination:none	p_celestial_jumbo_1,p_arcana_normal_1
+pack	TUTORIAL	7	1	p_celestial_jumbo_1	Planet:c_saturn:none,Planet:c_mercury:none,Planet:c_jupiter:none,Planet:c_uranus:none,Planet:c_pluto:none
+pack	TUTORIAL	7	2	p_arcana_normal_1	Tarot:c_world:none,Tarot:c_empress:none,Tarot:c_devil:none
+reroll	TUTORIAL	7	Planet:c_uranus:none,Tarot:c_tower:none
+shop	TUTORIAL	8	3	Joker:j_ramen:none,Joker:j_sly:none	p_arcana_normal_4,p_arcana_mega_2
+pack	TUTORIAL	8	1	p_arcana_normal_4	Tarot:c_chariot:none,Tarot:c_hermit:none,Tarot:c_heirophant:none
+pack	TUTORIAL	8	2	p_arcana_mega_2	Tarot:c_magician:none,Tarot:c_tower:none,Tarot:c_star:none,Tarot:c_chariot:none,Tarot:c_sun:none
+reroll	TUTORIAL	8	Joker:j_supernova:none,Planet:c_earth:none
+voucher	TUTORIAL	4	v_paint_brush
+tags	TUTORIAL	4	tag_boss	tag_boss
+shop	TUTORIAL	9	4	Planet:c_saturn:none,Joker:j_dusk:none	p_standard_normal_3,p_standard_normal_3
+pack	TUTORIAL	9	1	p_standard_normal_3	Base:c_base:none:D_K:none,Base:c_base:none:C_T:none,Base:c_base:foil:C_8:none
+pack	TUTORIAL	9	2	p_standard_normal_3	Enhanced:m_mult:none:S_4:none,Base:c_base:none:D_K:none,Base:c_base:none:H_Q:none
+reroll	TUTORIAL	9	Joker:j_lusty_joker:none,Tarot:c_hermit:none
+shop	TUTORIAL	10	4	Joker:j_certificate:none,Joker:j_delayed_grat:none	p_standard_jumbo_1,p_buffoon_normal_2
+pack	TUTORIAL	10	1	p_standard_jumbo_1	Enhanced:m_wild:none:S_K:none,Base:c_base:none:C_3:Red,Enhanced:m_bonus:none:C_7:Blue,Enhanced:m_mult:none:C_A:none,Base:c_base:none:S_A:none
+pack	TUTORIAL	10	2	p_buffoon_normal_2	Joker:j_droll:none,Joker:j_castle:none
+reroll	TUTORIAL	10	Joker:j_stencil:none,Joker:j_flower_pot:none
+shop	TUTORIAL	11	4	Planet:c_pluto:none,Joker:j_odd_todd:none	p_celestial_jumbo_1,p_arcana_jumbo_1
+pack	TUTORIAL	11	1	p_celestial_jumbo_1	Planet:c_uranus:none,Planet:c_earth:none,Planet:c_mercury:none,Planet:c_jupiter:none,Planet:c_mars:none
+pack	TUTORIAL	11	2	p_arcana_jumbo_1	Tarot:c_lovers:none,Tarot:c_devil:none,Tarot:c_strength:none,Tarot:c_magician:none,Tarot:c_hanged_man:none
+reroll	TUTORIAL	11	Joker:j_banner:none,Tarot:c_emperor:none
+voucher	AAAAAAAA	1	v_planet_merchant
+tags	AAAAAAAA	1	tag_skip	tag_economy
+shop	AAAAAAAA	1	1	Joker:j_bull:none,Joker:j_faceless:none	p_buffoon_normal_1,p_celestial_jumbo_2
+pack	AAAAAAAA	1	1	p_buffoon_normal_1	Joker:j_shoot_the_moon:none,Joker:j_zany:none
+pack	AAAAAAAA	1	2	p_celestial_jumbo_2	Planet:c_venus:none,Planet:c_mercury:none,Planet:c_mars:none,Planet:c_uranus:none,Planet:c_pluto:none
+reroll	AAAAAAAA	1	Joker:j_misprint:none,Tarot:c_sun:none
+shop	AAAAAAAA	2	1	Joker:j_to_the_moon:none,Joker:j_green_joker:holo	p_celestial_normal_1,p_standard_mega_2
+pack	AAAAAAAA	2	1	p_celestial_normal_1	Planet:c_saturn:none,Planet:c_mars:none,Planet:c_mercury:none
+pack	AAAAAAAA	2	2	p_standard_mega_2	Base:c_base:none:H_T:none,Enhanced:m_bonus:none:S_4:none,Base:c_base:none:H_Q:none,Base:c_base:none:D_A:Red,Base:c_base:none:S_9:none
+reroll	AAAAAAAA	2	Joker:j_sly:none,Joker:j_misprint:none
+voucher	AAAAAAAA	2	v_magic_trick
+tags	AAAAAAAA	2	tag_juggle	tag_ethereal
+shop	AAAAAAAA	3	2	Joker:j_bloodstone:none,Joker:j_abstract:none	p_celestial_mega_2,p_standard_jumbo_2
+pack	AAAAAAAA	3	1	p_celestial_mega_2	Planet:c_mercury:none,Planet:c_neptune:none,Planet:c_uranus:none,Planet:c_pluto:none,Planet:c_mars:none
+pack	AAAAAAAA	3	2	p_standard_jumbo_2	Enhanced:m_stone:none:S_2:none,Base:c_base:none:S_7:none,Enhanced:m_gold:none:C_6:none,Enhanced:m_stone:none:H_7:none,Enhanced:m_bonus:none:H_6:none
+reroll	AAAAAAAA	3	Joker:j_bootstraps:none,Joker:j_swashbuckler:none
+shop	AAAAAAAA	4	2	Joker:j_mad:none,Joker:j_mystic_summit:none	p_arcana_mega_2,p_arcana_normal_3
+pack	AAAAAAAA	4	1	p_arcana_mega_2	Tarot:c_heirophant:none,Tarot:c_empress:none,Tarot:c_hanged_man:none,Tarot:c_justice:none,Tarot:c_emperor:none
+pack	AAAAAAAA	4	2	p_arcana_normal_3	Tarot:c_devil:none,Tarot:c_chariot:none,Tarot:c_high_priestess:none
+reroll	AAAAAAAA	4	Tarot:c_chariot:none,Joker:j_banner:none
+shop	AAAAAAAA	5	2	Joker:j_odd_todd:none,Tarot:c_heirophant:none	p_buffoon_jumbo_1,p_standard_normal_4
+pack	AAAAAAAA	5	1	p_buffoon_jumbo_1	Joker:j_drunkard:none,Joker:j_popcorn:none,Joker:j_hanging_chad:none,Joker:j_green_joker:none
+pack	AAAAAAAA	5	2	p_standard_normal_4	Enhanced:m_stone:none:D_3:Purple,Base:c_base:none:S_2:none,Base:c_base:none:D_5:none
+reroll	AAAAAAAA	5	Joker:j_chaos:none,Planet:c_jupiter:none
+voucher	AAAAAAAA	3	v_seed_money
+tags	AAAAAAAA	3	tag_coupon	tag_uncommon
+shop	AAAAAAAA	6	3	Joker:j_selzer:none,Tarot:c_magician:none	p_spectral_mega_1,p_standard_normal_2
+pack	AAAAAAAA	6	1	p_spectral_mega_1	Spectral:c_deja_vu:none,Spectral:c_familiar:none,Spectral:c_ouija:none,Spectral:c_sigil:none
+pack	AAAAAAAA	6	2	p_standard_normal_2	Base:c_base:none:S_K:none,Base:c_base:none:H_K:none,Enhanced:m_bonus:none:C_J:none
+reroll	AAAAAAAA	6	Planet:c_mars:none,Joker:j_seance:none
+shop	AAAAAAAA	7	3	Joker:j_mad:none,Joker:j_even_steven:none	p_standard_jumbo_1,p_spectral_normal_2
+pack	AAAAAAAA	7	1	p_standard_jumbo_1	Enhanced:m_steel:none:S_5:none,Base:c_base:none:C_2:none,Enhanced:m_glass:holo:S_9:Gold,Enhanced:m_steel:none:D_9:Blue,Enhanced:m_glass:none:D_6:none
+pack	AAAAAAAA	7	2	p_spectral_normal_2	Spectral:c_incantation:none,Spectral:c_trance:none
+reroll	AAAAAAAA	7	Tarot:c_temperance:none,Joker:j_crafty:none
+shop	AAAAAAAA	8	3	Joker:j_even_steven:none,Planet:c_venus:none	p_arcana_jumbo_2,p_standard_jumbo_2
+pack	AAAAAAAA	8	1	p_arcana_jumbo_2	Tarot:c_justice:none,Tarot:c_sun:none,Tarot:c_strength:none,Tarot:c_high_priestess:none,Tarot:c_heirophant:none
+pack	AAAAAAAA	8	2	p_standard_jumbo_2	Base:c_base:none:H_J:Purple,Enhanced:m_wild:none:C_4:none,Enhanced:m_wild:none:D_Q:Purple,Base:c_base:none:C_4:Blue,Enhanced:m_mult:none:S_A:none
+reroll	AAAAAAAA	8	Joker:j_droll:none,Joker:j_even_steven:none
+voucher	AAAAAAAA	4	v_telescope
+tags	AAAAAAAA	4	tag_coupon	tag_d_six
+shop	AAAAAAAA	9	4	Joker:j_golden:none,Joker:j_zany:none	p_buffoon_jumbo_1,p_buffoon_jumbo_1
+pack	AAAAAAAA	9	1	p_buffoon_jumbo_1	Joker:j_banner:none,Joker:j_stencil:none,Joker:j_juggler:none,Joker:j_crafty:none
+pack	AAAAAAAA	9	2	p_buffoon_jumbo_1	Joker:j_misprint:none,Joker:j_mystic_summit:none,Joker:j_faceless:none,Joker:j_supernova:none
+reroll	AAAAAAAA	9	Joker:j_troubadour:none,Tarot:c_judgement:none
+shop	AAAAAAAA	10	4	Joker:j_green_joker:none,Joker:j_ride_the_bus:none	p_celestial_normal_2,p_arcana_jumbo_2
+pack	AAAAAAAA	10	1	p_celestial_normal_2	Planet:c_saturn:none,Planet:c_venus:none,Planet:c_mercury:none
+pack	AAAAAAAA	10	2	p_arcana_jumbo_2	Tarot:c_wheel_of_fortune:none,Tarot:c_death:none,Tarot:c_magician:none,Tarot:c_hermit:none,Tarot:c_justice:none
+reroll	AAAAAAAA	10	Joker:j_smiley:none,Joker:j_red_card:none
+shop	AAAAAAAA	11	4	Joker:j_half:none,Tarot:c_devil:none	p_arcana_normal_4,p_arcana_normal_3
+pack	AAAAAAAA	11	1	p_arcana_normal_4	Tarot:c_chariot:none,Tarot:c_wheel_of_fortune:none,Tarot:c_tower:none
+pack	AAAAAAAA	11	2	p_arcana_normal_3	Tarot:c_temperance:none,Tarot:c_moon:none,Tarot:c_world:none
+reroll	AAAAAAAA	11	Joker:j_shortcut:none,Joker:j_madness:none
+voucher	7NLLGSMA	1	v_magic_trick
+tags	7NLLGSMA	1	tag_d_six	tag_foil
+shop	7NLLGSMA	1	1	Joker:j_even_steven:none,Joker:j_abstract:none	p_buffoon_normal_1,p_celestial_normal_1
+pack	7NLLGSMA	1	1	p_buffoon_normal_1	Joker:j_seeing_double:none,Joker:j_riff_raff:none
+pack	7NLLGSMA	1	2	p_celestial_normal_1	Planet:c_neptune:none,Planet:c_pluto:none,Planet:c_uranus:none
+reroll	7NLLGSMA	1	Joker:j_half:none,Joker:j_burglar:none
+shop	7NLLGSMA	2	1	Joker:j_blue_joker:none,Joker:j_gros_michel:none	p_spectral_jumbo_1,p_arcana_normal_4
+pack	7NLLGSMA	2	1	p_spectral_jumbo_1	Spectral:c_cryptid:none,Spectral:c_hex:none,Spectral:c_talisman:none,Spectral:c_aura:none
+pack	7NLLGSMA	2	2	p_arcana_normal_4	Tarot:c_magician:none,Tarot:c_chariot:none,Tarot:c_heirophant:none
+reroll	7NLLGSMA	2	Joker:j_hanging_chad:none,Joker:j_sock_and_buskin:none
+voucher	7NLLGSMA	2	v_seed_money
+tags	7NLLGSMA	2	tag_handy	tag_buffoon
+shop	7NLLGSMA	3	2	Joker:j_riff_raff:none,Joker:j_wrathful_joker:none	p_arcana_jumbo_2,p_standard_mega_1
+pack	7NLLGSMA	3	1	p_arcana_jumbo_2	Tarot:c_wheel_of_fortune:none,Tarot:c_emperor:none,Tarot:c_hanged_man:none,Tarot:c_high_priestess:none,Tarot:c_death:none
+pack	7NLLGSMA	3	2	p_standard_mega_1	Base:c_base:none:H_Q:Red,Base:c_base:none:C_Q:none,Enhanced:m_lucky:none:C_9:none,Base:c_base:none:C_Q:none,Base:c_base:none:S_A:none
+reroll	7NLLGSMA	3	Joker:j_swashbuckler:none,Joker:j_crafty:none
+shop	7NLLGSMA	4	2	Joker:j_sly:none,Planet:c_neptune:none	p_arcana_jumbo_1,p_standard_normal_4
+pack	7NLLGSMA	4	1	p_arcana_jumbo_1	Tarot:c_tower:none,Tarot:c_wheel_of_fortune:none,Tarot:c_chariot:none,Tarot:c_world:none,Tarot:c_devil:none
+pack	7NLLGSMA	4	2	p_standard_normal_4	Base:c_base:none:D_4:none,Enhanced:m_wild:none:C_7:none,Base:c_base:none:D_J:Blue
+reroll	7NLLGSMA	4	Joker:j_blackboard:none,Joker:j_half:none
+shop	7NLLGSMA	5	2	Planet:c_mars:none,Joker:j_drunkard:none	p_spectral_jumbo_1,p_standard_jumbo_1
+pack	7NLLGSMA	5	1	p_spectral_jumbo_1	Spectral:c_aura:none,Spectral:c_talisman:none,Spectral:c_grim:none,Spectral:c_sigil:none
+pack	7NLLGSMA	5	2	p_standard_jumbo_1	Enhanced:m_mult:none:S_7:none,Enhanced:m_mult:none:C_3:none,Enhanced:m_bonus:none:D_8:none,Base:c_base:none:S_7:none,Base:c_base:foil:H_K:none
+reroll	7NLLGSMA	5	Joker:j_trousers:none,Joker:j_flash:none
+voucher	7NLLGSMA	3	v_grabber
+tags	7NLLGSMA	3	tag_handy	tag_boss
+shop	7NLLGSMA	6	3	Planet:c_venus:none,Planet:c_uranus:none	p_celestial_jumbo_2,p_standard_mega_1
+pack	7NLLGSMA	6	1	p_celestial_jumbo_2	Planet:c_neptune:none,Planet:c_mercury:none,Planet:c_saturn:none,Planet:c_jupiter:none,Planet:c_pluto:none
+pack	7NLLGSMA	6	2	p_standard_mega_1	Enhanced:m_gold:polychrome:S_8:none,Enhanced:m_glass:none:H_8:none,Base:c_base:none:C_2:none,Enhanced:m_mult:none:H_4:none,Base:c_base:none:C_Q:none
+reroll	7NLLGSMA	6	Joker:j_smeared:none,Joker:j_ice_cream:none
+shop	7NLLGSMA	7	3	Planet:c_uranus:none,Joker:j_runner:none	p_standard_mega_1,p_spectral_normal_2
+pack	7NLLGSMA	7	1	p_standard_mega_1	Enhanced:m_mult:none:C_7:Purple,Base:c_base:none:D_6:Gold,Enhanced:m_wild:none:D_9:Red,Base:c_base:none:C_K:none,Base:c_base:none:C_5:none
+pack	7NLLGSMA	7	2	p_spectral_normal_2	Spectral:c_hex:none,Spectral:c_deja_vu:none
+reroll	7NLLGSMA	7	Planet:c_saturn:none,Joker:j_supernova:none
+shop	7NLLGSMA	8	3	Joker:j_mail:none,Joker:j_lusty_joker:foil	p_buffoon_mega_1,p_arcana_jumbo_2
+pack	7NLLGSMA	8	1	p_buffoon_mega_1	Joker:j_acrobat:none,Joker:j_zany:none,Joker:j_bootstraps:none,Joker:j_fortune_teller:none
+pack	7NLLGSMA	8	2	p_arcana_jumbo_2	Tarot:c_moon:none,Tarot:c_high_priestess:none,Tarot:c_empress:none,Tarot:c_devil:none,Tarot:c_star:none
+reroll	7NLLGSMA	8	Joker:j_crafty:none,Joker:j_sly:none
+voucher	7NLLGSMA	4	v_telescope
+tags	7NLLGSMA	4	tag_charm	tag_boss
+shop	7NLLGSMA	9	4	Planet:c_mercury:none,Tarot:c_heirophant:none	p_buffoon_normal_2,p_celestial_jumbo_2
+pack	7NLLGSMA	9	1	p_buffoon_normal_2	Joker:j_bloodstone:none,Joker:j_rough_gem:none
+pack	7NLLGSMA	9	2	p_celestial_jumbo_2	Planet:c_venus:none,Planet:c_neptune:none,Planet:c_pluto:none,Planet:c_uranus:none,Planet:c_jupiter:none
+reroll	7NLLGSMA	9	Tarot:c_justice:none,Tarot:c_high_priestess:none
+shop	7NLLGSMA	10	4	Joker:j_zany:none,Joker:j_blue_joker:none	p_celestial_mega_1,p_standard_normal_2
+pack	7NLLGSMA	10	1	p_celestial_mega_1	Planet:c_jupiter:none,Planet:c_neptune:none,Planet:c_earth:none,Planet:c_saturn:none,Planet:c_venus:none
+pack	7NLLGSMA	10	2	p_standard_normal_2	Base:c_base:none:C_7:none,Enhanced:m_bonus:none:H_4:none,Enhanced:m_gold:none:H_K:none
+reroll	7NLLGSMA	10	Planet:c_earth:none,Joker:j_green_joker:none
+shop	7NLLGSMA	11	4	Joker:j_flash:none,Joker:j_rough_gem:none	p_arcana_mega_2,p_buffoon_normal_2
+pack	7NLLGSMA	11	1	p_arcana_mega_2	Tarot:c_moon:none,Tarot:c_hanged_man:none,Tarot:c_emperor:none,Tarot:c_strength:none,Tarot:c_hermit:none
+pack	7NLLGSMA	11	2	p_buffoon_normal_2	Joker:j_drunkard:none,Joker:j_delayed_grat:none
+reroll	7NLLGSMA	11	Tarot:c_tower:none,Joker:j_green_joker:none
+voucher	XEQH7CP9	1	v_telescope
+tags	XEQH7CP9	1	tag_coupon	tag_holo
+shop	XEQH7CP9	1	1	Planet:c_venus:none,Planet:c_mars:none	p_buffoon_normal_1,p_arcana_normal_1
+pack	XEQH7CP9	1	1	p_buffoon_normal_1	Joker:j_crazy:holo,Joker:j_oops:holo
+pack	XEQH7CP9	1	2	p_arcana_normal_1	Tarot:c_emperor:none,Tarot:c_fool:none,Tarot:c_devil:none
+reroll	XEQH7CP9	1	Joker:j_todo_list:holo,Joker:j_mr_bones:holo
+shop	XEQH7CP9	2	1	Joker:j_scholar:holo,Planet:c_jupiter:none	p_celestial_normal_4,p_celestial_jumbo_1
+pack	XEQH7CP9	2	1	p_celestial_normal_4	Planet:c_uranus:none,Planet:c_pluto:none,Planet:c_venus:none
+pack	XEQH7CP9	2	2	p_celestial_jumbo_1	Planet:c_earth:none,Planet:c_saturn:none,Planet:c_venus:none,Planet:c_mars:none,Planet:c_mercury:none
+reroll	XEQH7CP9	2	Tarot:c_fool:none,Planet:c_earth:none
+voucher	XEQH7CP9	2	v_magic_trick
+tags	XEQH7CP9	2	tag_garbage	tag_investment
+shop	XEQH7CP9	3	2	Joker:j_runner:holo,Joker:j_duo:holo	p_celestial_normal_4,p_celestial_normal_4
+pack	XEQH7CP9	3	1	p_celestial_normal_4	Planet:c_uranus:none,Planet:c_earth:none,Planet:c_pluto:none
+pack	XEQH7CP9	3	2	p_celestial_normal_4	Planet:c_uranus:none,Planet:c_saturn:none,Planet:c_jupiter:none
+reroll	XEQH7CP9	3	Joker:j_sock_and_buskin:holo,Joker:j_photograph:holo
+shop	XEQH7CP9	4	2	Tarot:c_moon:none,Joker:j_smiley:holo	p_standard_jumbo_1,p_standard_normal_3
+pack	XEQH7CP9	4	1	p_standard_jumbo_1	Enhanced:m_stone:none:S_6:none,Enhanced:m_gold:none:C_K:none,Enhanced:m_mult:none:C_T:none,Enhanced:m_wild:none:S_3:none,Enhanced:m_wild:holo:D_7:none
+pack	XEQH7CP9	4	2	p_standard_normal_3	Enhanced:m_glass:none:C_8:none,Enhanced:m_steel:none:S_4:Purple,Enhanced:m_bonus:none:S_4:none
+reroll	XEQH7CP9	4	Planet:c_uranus:none,Joker:j_to_the_moon:holo
+shop	XEQH7CP9	5	2	Joker:j_faceless:holo,Planet:c_uranus:none	p_arcana_mega_1,p_celestial_normal_3
+pack	XEQH7CP9	5	1	p_arcana_mega_1	Tarot:c_sun:none,Tarot:c_empress:none,Tarot:c_tower:none,Tarot:c_world:none,Tarot:c_emperor:none
+pack	XEQH7CP9	5	2	p_celestial_normal_3	Planet:c_earth:none,Planet:c_jupiter:none,Planet:c_mars:none
+reroll	XEQH7CP9	5	Joker:j_fortune_teller:holo,Planet:c_earth:none
+voucher	XEQH7CP9	3	v_tarot_merchant
+tags	XEQH7CP9	3	tag_polychrome	tag_economy
+shop	XEQH7CP9	6	3	Joker:j_joker:holo,Joker:j_reserved_parking:holo	p_arcana_normal_2,p_standard_normal_1
+pack	XEQH7CP9	6	1	p_arcana_normal_2	Tarot:c_high_priestess:none,Tarot:c_wheel_of_fortune:none,Tarot:c_magician:none
+pack	XEQH7CP9	6	2	p_standard_normal_1	Enhanced:m_steel:none:H_9:none,Enhanced:m_gold:none:D_3:none,Enhanced:m_bonus:none:D_6:none
+reroll	XEQH7CP9	6	Joker:j_todo_list:holo,Joker:j_photograph:holo
+shop	XEQH7CP9	7	3	Joker:j_green_joker:holo,Joker:j_popcorn:holo	p_buffoon_normal_2,p_standard_normal_3
+pack	XEQH7CP9	7	1	p_buffoon_normal_2	Joker:j_chaos:holo,Joker:j_hallucination:holo
+pack	XEQH7CP9	7	2	p_standard_normal_3	Enhanced:m_stone:none:C_T:Blue,Enhanced:m_mult:none:D_5:none,Enhanced:m_stone:none:H_9:none
+reroll	XEQH7CP9	7	Joker:j_credit_card:holo,Joker:j_riff_raff:holo
+shop	XEQH7CP9	8	3	Joker:j_hallucination:holo,Planet:c_neptune:none	p_arcana_normal_4,p_standard_normal_4
+pack	XEQH7CP9	8	1	p_arcana_normal_4	Tarot:c_moon:none,Tarot:c_chariot:none,Tarot:c_hanged_man:none
+pack	XEQH7CP9	8	2	p_standard_normal_4	Enhanced:m_mult:none:S_7:none,Enhanced:m_glass:none:D_6:none,Enhanced:m_wild:none:S_7:Purple
+reroll	XEQH7CP9	8	Joker:j_blackboard:holo,Planet:c_neptune:none
+voucher	XEQH7CP9	4	v_grabber
+tags	XEQH7CP9	4	tag_coupon	tag_rare
+shop	XEQH7CP9	9	4	Tarot:c_heirophant:none,Joker:j_hanging_chad:holo	p_celestial_normal_2,p_arcana_normal_4
+pack	XEQH7CP9	9	1	p_celestial_normal_2	Planet:c_earth:none,Planet:c_venus:none,Planet:c_saturn:none
+pack	XEQH7CP9	9	2	p_arcana_normal_4	Tarot:c_emperor:none,Tarot:c_devil:none,Tarot:c_hermit:none
+reroll	XEQH7CP9	9	Planet:c_earth:none,Joker:j_constellation:holo
+shop	XEQH7CP9	10	4	Joker:j_blackboard:holo,Joker:j_crafty:holo	p_spectral_normal_1,p_arcana_normal_4
+pack	XEQH7CP9	10	1	p_spectral_normal_1	Spectral:c_trance:none,Spectral:c_immolate:none
+pack	XEQH7CP9	10	2	p_arcana_normal_4	Tarot:c_heirophant:none,Tarot:c_world:none,Tarot:c_high_priestess:none
+reroll	XEQH7CP9	10	Joker:j_business:holo,Planet:c_mercury:none
+shop	XEQH7CP9	11	4	Joker:j_odd_todd:holo,Planet:c_pluto:none	p_arcana_normal_4,p_arcana_normal_2
+pack	XEQH7CP9	11	1	p_arcana_normal_4	Tarot:c_emperor:none,Tarot:c_judgement:none,Tarot:c_heirophant:none
+pack	XEQH7CP9	11	2	p_arcana_normal_2	Tarot:c_star:none,Tarot:c_tower:none,Tarot:c_devil:none
+reroll	XEQH7CP9	11	Joker:j_juggler:holo,Joker:j_devious:holo
+voucher	OOPS1234	1	v_planet_merchant
+tags	OOPS1234	1	tag_foil	tag_investment
+shop	OOPS1234	1	1	Joker:j_chaos:none,Joker:j_half:none	p_buffoon_normal_1,p_buffoon_normal_2
+pack	OOPS1234	1	1	p_buffoon_normal_1	Joker:j_swashbuckler:none,Joker:j_superposition:none
+pack	OOPS1234	1	2	p_buffoon_normal_2	Joker:j_obelisk:none,Joker:j_bloodstone:none
+reroll	OOPS1234	1	Joker:j_seeing_double:none,Joker:j_blue_joker:none
+shop	OOPS1234	2	1	Joker:j_credit_card:none,Joker:j_riff_raff:none	p_arcana_normal_4,p_standard_normal_4
+pack	OOPS1234	2	1	p_arcana_normal_4	Tarot:c_star:none,Tarot:c_fool:none,Tarot:c_world:none
+pack	OOPS1234	2	2	p_standard_normal_4	Base:c_base:none:C_6:none,Base:c_base:none:D_4:none,Base:c_base:none:D_7:Gold
+reroll	OOPS1234	2	Joker:j_chaos:none,Joker:j_runner:none
+voucher	OOPS1234	2	v_magic_trick
+tags	OOPS1234	2	tag_holo	tag_boss
+shop	OOPS1234	3	2	Joker:j_raised_fist:none,Joker:j_smeared:none	p_arcana_jumbo_2,p_buffoon_normal_1
+pack	OOPS1234	3	1	p_arcana_jumbo_2	Tarot:c_magician:none,Tarot:c_justice:none,Tarot:c_fool:none,Tarot:c_tower:none,Tarot:c_devil:none
+pack	OOPS1234	3	2	p_buffoon_normal_1	Joker:j_troubadour:foil,Joker:j_splash:none
+reroll	OOPS1234	3	Joker:j_8_ball:none,Tarot:c_judgement:none
+shop	OOPS1234	4	2	Joker:j_shoot_the_moon:none,Joker:j_rocket:none	p_standard_normal_4,p_arcana_normal_4
+pack	OOPS1234	4	1	p_standard_normal_4	Base:c_base:none:D_5:none,Base:c_base:none:S_Q:none,Base:c_base:none:C_2:none
+pack	OOPS1234	4	2	p_arcana_normal_4	Tarot:c_empress:none,Tarot:c_death:none,Tarot:c_hermit:none
+reroll	OOPS1234	4	Joker:j_castle:negative,Planet:c_mars:none
+shop	OOPS1234	5	2	Joker:j_joker:none,Joker:j_ice_cream:none	p_arcana_normal_1,p_buffoon_jumbo_1
+pack	OOPS1234	5	1	p_arcana_normal_1	Tarot:c_tower:none,Tarot:c_star:none,Tarot:c_devil:none
+pack	OOPS1234	5	2	p_buffoon_jumbo_1	Joker:j_ceremonial:none,Joker:j_odd_todd:none,Joker:j_walkie_talkie:none,Joker:j_bull:none
+reroll	OOPS1234	5	Tarot:c_tower:none,Planet:c_mars:none
+voucher	OOPS1234	3	v_blank
+tags	OOPS1234	3	tag_voucher	tag_investment
+shop	OOPS1234	6	3	Planet:c_jupiter:none,Joker:j_marble:none	p_celestial_normal_3,p_celestial_jumbo_1
+pack	OOPS1234	6	1	p_celestial_normal_3	Planet:c_mercury:none,Planet:c_saturn:none,Planet:c_neptune:none
+pack	OOPS1234	6	2	p_celestial_jumbo_1	Planet:c_mercury:none,Planet:c_venus:none,Planet:c_neptune:none,Planet:c_uranus:none,Planet:c_saturn:none
+reroll	OOPS1234	6	Joker:j_hit_the_road:none,Joker:j_ice_cream:none
+shop	OOPS1234	7	3	Joker:j_erosion:none,Planet:c_mars:none	p_celestial_normal_2,p_arcana_normal_1
+pack	OOPS1234	7	1	p_celestial_normal_2	Planet:c_mercury:none,Planet:c_neptune:none,Planet:c_uranus:none
+pack	OOPS1234	7	2	p_arcana_normal_1	Tarot:c_wheel_of_fortune:none,Tarot:c_emperor:none,Tarot:c_chariot:none
+reroll	OOPS1234	7	Joker:j_credit_card:none,Joker:j_idol:none
+shop	OOPS1234	8	3	Joker:j_blue_joker:none,Planet:c_earth:none	p_standard_jumbo_1,p_celestial_normal_1
+pack	OOPS1234	8	1	p_standard_jumbo_1	Enhanced:m_bonus:none:H_J:Purple,Base:c_base:none:H_A:none,Base:c_base:none:D_6:Purple,Base:c_base:none:S_A:Red,Base:c_base:none:H_5:none
+pack	OOPS1234	8	2	p_celestial_normal_1	Planet:c_venus:none,Planet:c_saturn:none,Planet:c_neptune:none
+reroll	OOPS1234	8	Tarot:c_hermit:none,Joker:j_troubadour:none
+voucher	OOPS1234	4	v_crystal_ball
+tags	OOPS1234	4	tag_investment	tag_uncommon
+shop	OOPS1234	9	4	Joker:j_selzer:none,Tarot:c_justice:none	p_buffoon_jumbo_1,p_standard_normal_4
+pack	OOPS1234	9	1	p_buffoon_jumbo_1	Joker:j_greedy_joker:none,Joker:j_clever:none,Joker:j_trio:polychrome,Joker:j_drivers_license:none
+pack	OOPS1234	9	2	p_standard_normal_4	Enhanced:m_wild:none:D_6:none,Enhanced:m_bonus:none:D_5:none,Enhanced:m_steel:none:H_4:none
+reroll	OOPS1234	9	Planet:c_pluto:none,Joker:j_satellite:none
+shop	OOPS1234	10	4	Planet:c_uranus:none,Tarot:c_hermit:none	p_celestial_normal_4,p_arcana_normal_2
+pack	OOPS1234	10	1	p_celestial_normal_4	Planet:c_saturn:none,Planet:c_pluto:none,Planet:c_mercury:none
+pack	OOPS1234	10	2	p_arcana_normal_2	Tarot:c_sun:none,Tarot:c_death:none,Tarot:c_moon:none
+reroll	OOPS1234	10	Joker:j_zany:none,Tarot:c_world:none
+shop	OOPS1234	11	4	Tarot:c_tower:none,Joker:j_burnt:none	p_celestial_normal_2,p_arcana_jumbo_2
+pack	OOPS1234	11	1	p_celestial_normal_2	Planet:c_saturn:none,Planet:c_mercury:none,Planet:c_uranus:none
+pack	OOPS1234	11	2	p_arcana_jumbo_2	Tarot:c_world:none,Tarot:c_sun:none,Tarot:c_lovers:none,Tarot:c_hermit:none,Tarot:c_emperor:none
+reroll	OOPS1234	11	Joker:j_abstract:none,Planet:c_uranus:none
+voucher	P3BSHOPS	1	v_crystal_ball
+tags	P3BSHOPS	1	tag_coupon	tag_economy
+shop	P3BSHOPS	1	1	Joker:j_faceless:none,Tarot:c_high_priestess:none	p_buffoon_normal_1,p_celestial_normal_3
+pack	P3BSHOPS	1	1	p_buffoon_normal_1	Joker:j_superposition:none,Joker:j_square:none
+pack	P3BSHOPS	1	2	p_celestial_normal_3	Planet:c_jupiter:none,Planet:c_neptune:none,Planet:c_venus:none
+reroll	P3BSHOPS	1	Joker:j_wrathful_joker:none,Planet:c_pluto:none
+shop	P3BSHOPS	2	1	Planet:c_mars:none,Joker:j_erosion:none	p_standard_normal_3,p_celestial_normal_3
+pack	P3BSHOPS	2	1	p_standard_normal_3	Enhanced:m_wild:none:D_Q:Gold,Base:c_base:none:H_2:none,Enhanced:m_steel:none:C_6:none
+pack	P3BSHOPS	2	2	p_celestial_normal_3	Planet:c_neptune:none,Planet:c_uranus:none,Planet:c_venus:none
+reroll	P3BSHOPS	2	Joker:j_blue_joker:none,Joker:j_mail:none
+voucher	P3BSHOPS	2	v_clearance_sale
+tags	P3BSHOPS	2	tag_skip	tag_boss
+shop	P3BSHOPS	3	2	Joker:j_delayed_grat:none,Tarot:c_world:none	p_standard_normal_1,p_arcana_normal_4
+pack	P3BSHOPS	3	1	p_standard_normal_1	Base:c_base:foil:S_9:none,Enhanced:m_gold:none:S_6:none,Base:c_base:none:D_6:none
+pack	P3BSHOPS	3	2	p_arcana_normal_4	Tarot:c_strength:none,Tarot:c_empress:none,Tarot:c_devil:none
+reroll	P3BSHOPS	3	Joker:j_blueprint:none,Joker:j_blue_joker:none
+shop	P3BSHOPS	4	2	Joker:j_egg:none,Joker:j_mr_bones:none	p_celestial_jumbo_1,p_standard_normal_2
+pack	P3BSHOPS	4	1	p_celestial_jumbo_1	Planet:c_uranus:none,Planet:c_venus:none,Planet:c_mercury:none,Planet:c_saturn:none,Planet:c_jupiter:none
+pack	P3BSHOPS	4	2	p_standard_normal_2	Base:c_base:none:D_9:none,Base:c_base:foil:C_K:none,Base:c_base:none:H_3:none
+reroll	P3BSHOPS	4	Joker:j_egg:none,Joker:j_abstract:none
+shop	P3BSHOPS	5	2	Tarot:c_lovers:none,Joker:j_arrowhead:none	p_standard_normal_1,p_celestial_normal_2
+pack	P3BSHOPS	5	1	p_standard_normal_1	Base:c_base:none:S_A:none,Base:c_base:none:D_Q:Purple,Base:c_base:none:D_9:Gold
+pack	P3BSHOPS	5	2	p_celestial_normal_2	Planet:c_venus:none,Planet:c_mercury:none,Planet:c_mars:none
+reroll	P3BSHOPS	5	Planet:c_neptune:none,Joker:j_madness:none
+voucher	P3BSHOPS	3	v_overstock_norm
+tags	P3BSHOPS	3	tag_negative	tag_d_six
+shop	P3BSHOPS	6	3	Joker:j_egg:none,Tarot:c_hermit:none	p_standard_jumbo_2,p_standard_normal_3
+pack	P3BSHOPS	6	1	p_standard_jumbo_2	Base:c_base:none:D_3:none,Enhanced:m_wild:none:H_4:none,Enhanced:m_steel:none:D_A:none,Base:c_base:none:H_5:none,Base:c_base:none:C_8:none
+pack	P3BSHOPS	6	2	p_standard_normal_3	Enhanced:m_lucky:foil:S_7:none,Base:c_base:none:S_6:none,Base:c_base:none:D_K:Gold
+reroll	P3BSHOPS	6	Tarot:c_tower:none,Tarot:c_justice:none
+shop	P3BSHOPS	7	3	Joker:j_smiley:none,Joker:j_mr_bones:none	p_arcana_normal_1,p_buffoon_normal_2
+pack	P3BSHOPS	7	1	p_arcana_normal_1	Tarot:c_strength:none,Tarot:c_magician:none,Tarot:c_temperance:none
+pack	P3BSHOPS	7	2	p_buffoon_normal_2	Joker:j_mail:none,Joker:j_space:none
+reroll	P3BSHOPS	7	Joker:j_flower_pot:none,Tarot:c_fool:none
+shop	P3BSHOPS	8	3	Joker:j_blue_joker:none,Planet:c_earth:none	p_standard_jumbo_1,p_arcana_normal_3
+pack	P3BSHOPS	8	1	p_standard_jumbo_1	Base:c_base:none:H_J:none,Enhanced:m_bonus:none:S_A:none,Base:c_base:none:S_A:none,Base:c_base:none:H_2:none,Enhanced:m_mult:none:S_K:none
+pack	P3BSHOPS	8	2	p_arcana_normal_3	Tarot:c_world:none,Tarot:c_high_priestess:none,Tarot:c_tower:none
+reroll	P3BSHOPS	8	Joker:j_jolly:none,Joker:j_faceless:none
+voucher	P3BSHOPS	4	v_seed_money
+tags	P3BSHOPS	4	tag_negative	tag_polychrome
+shop	P3BSHOPS	9	4	Planet:c_pluto:none,Joker:j_mail:none	p_standard_mega_2,p_celestial_jumbo_1
+pack	P3BSHOPS	9	1	p_standard_mega_2	Base:c_base:none:H_7:none,Base:c_base:none:S_3:Red,Base:c_base:none:S_9:none,Enhanced:m_stone:none:S_4:none,Enhanced:m_glass:none:S_6:Gold
+pack	P3BSHOPS	9	2	p_celestial_jumbo_1	Planet:c_uranus:none,Planet:c_venus:none,Planet:c_neptune:none,Planet:c_jupiter:none,Planet:c_saturn:none
+reroll	P3BSHOPS	9	Joker:j_photograph:none,Tarot:c_lovers:none
+shop	P3BSHOPS	10	4	Tarot:c_fool:none,Tarot:c_star:none	p_arcana_jumbo_1,p_arcana_jumbo_1
+pack	P3BSHOPS	10	1	p_arcana_jumbo_1	Tarot:c_temperance:none,Tarot:c_judgement:none,Tarot:c_sun:none,Tarot:c_death:none,Tarot:c_chariot:none
+pack	P3BSHOPS	10	2	p_arcana_jumbo_1	Tarot:c_chariot:none,Tarot:c_emperor:none,Tarot:c_heirophant:none,Tarot:c_high_priestess:none,Tarot:c_lovers:none
+reroll	P3BSHOPS	10	Joker:j_matador:none,Joker:j_trading:none
+shop	P3BSHOPS	11	4	Joker:j_ice_cream:foil,Tarot:c_judgement:none	p_celestial_normal_2,p_celestial_normal_1
+pack	P3BSHOPS	11	1	p_celestial_normal_2	Planet:c_neptune:none,Planet:c_jupiter:none,Planet:c_mars:none
+pack	P3BSHOPS	11	2	p_celestial_normal_1	Planet:c_mars:none,Planet:c_earth:none,Planet:c_uranus:none
+reroll	P3BSHOPS	11	Tarot:c_strength:none,Joker:j_delayed_grat:none
+vvoucher	TUTORIAL	1	v_hieroglyph
+vtags	TUTORIAL	1	tag_skip	tag_boss
+vshop	TUTORIAL	1	1	Planet:c_uranus:none,Planet:c_earth:none,Joker:j_delayed_grat:none	p_buffoon_normal_1,p_standard_normal_3
+vpack	TUTORIAL	1	1	p_buffoon_normal_1	Joker:j_gros_michel:none,Joker:j_astronomer:foil
+vpack	TUTORIAL	1	2	p_standard_normal_3	Base:c_base:none:H_6:Gold,Base:c_base:foil:C_T:none,Base:c_base:none:H_T:none
+vreroll	TUTORIAL	1	Tarot:c_sun:none,Planet:c_mars:none,Planet:c_mercury:none
+vshop	TUTORIAL	2	1	Tarot:c_tower:none,Joker:j_chaos:none,Enhanced:m_lucky:none:D_K	p_arcana_normal_2,p_arcana_jumbo_1
+vpack	TUTORIAL	2	1	p_arcana_normal_2	Spectral:c_sigil:none,Spectral:c_grim:none,Tarot:c_judgement:none
+vpack	TUTORIAL	2	2	p_arcana_jumbo_1	Tarot:c_chariot:none,Tarot:c_world:none,Spectral:c_wraith:none,Tarot:c_death:none,Tarot:c_moon:none
+vreroll	TUTORIAL	2	Tarot:c_lovers:none,Joker:j_hiker:foil,Joker:j_shoot_the_moon:none
+vvoucher	TUTORIAL	2	v_wasteful
+vtags	TUTORIAL	2	tag_negative	tag_charm
+vshop	TUTORIAL	3	2	Joker:j_ride_the_bus:foil,Joker:j_campfire:none,Tarot:c_sun:none	p_standard_normal_3,p_standard_normal_1
+vpack	TUTORIAL	3	1	p_standard_normal_3	Enhanced:m_gold:none:S_6:none,Base:c_base:none:S_9:none,Enhanced:m_bonus:none:S_A:none
+vpack	TUTORIAL	3	2	p_standard_normal_1	Enhanced:m_glass:none:C_K:Gold,Base:c_base:none:S_4:Red,Enhanced:m_bonus:holo:S_9:none
+vreroll	TUTORIAL	3	Joker:j_crazy:none,Joker:j_turtle_bean:none,Tarot:c_chariot:none
+vshop	TUTORIAL	4	2	Joker:j_blue_joker:none,Tarot:c_world:none,Planet:c_venus:none	p_standard_normal_2,p_standard_normal_1
+vpack	TUTORIAL	4	1	p_standard_normal_2	Base:c_base:foil:H_8:Blue,Base:c_base:none:H_7:none,Base:c_base:none:S_8:Purple
+vpack	TUTORIAL	4	2	p_standard_normal_1	Enhanced:m_wild:none:S_7:none,Base:c_base:none:C_A:none,Base:c_base:holo:D_2:none
+vreroll	TUTORIAL	4	Joker:j_red_card:none,Joker:j_dusk:none,Joker:j_brainstorm:none
+vshop	TUTORIAL	5	2	Joker:j_midas_mask:none,Planet:c_uranus:none,Tarot:c_temperance:none	p_spectral_mega_1,p_arcana_jumbo_2
+vpack	TUTORIAL	5	1	p_spectral_mega_1	Spectral:c_grim:none,Spectral:c_aura:none,Spectral:c_hex:none,Spectral:c_ouija:none
+vpack	TUTORIAL	5	2	p_arcana_jumbo_2	Tarot:c_hermit:none,Tarot:c_tower:none,Tarot:c_strength:none,Tarot:c_heirophant:none,Tarot:c_high_priestess:none
+vreroll	TUTORIAL	5	Planet:c_venus:none,Tarot:c_emperor:none,Joker:j_photograph:none
+vvoucher	TUTORIAL	3	v_glow_up
+vtags	TUTORIAL	3	tag_ethereal	tag_negative
+vshop	TUTORIAL	6	3	Joker:j_sock_and_buskin:none,Joker:j_drivers_license:none,Joker:j_blue_joker:negative	p_spectral_normal_1,p_celestial_normal_4
+vpack	TUTORIAL	6	1	p_spectral_normal_1	Spectral:c_sigil:none,Spectral:c_medium:none
+vpack	TUTORIAL	6	2	p_celestial_normal_4	Planet:c_mars:none,Planet:c_neptune:none,Planet:c_earth:none
+vreroll	TUTORIAL	6	Joker:j_banner:none,Base:c_base:holo:H_A,Joker:j_hallucination:none
+vshop	TUTORIAL	7	3	Enhanced:m_mult:none:S_9,Planet:c_venus:none,Joker:j_ramen:none	p_celestial_jumbo_1,p_arcana_normal_1
+vpack	TUTORIAL	7	1	p_celestial_jumbo_1	Planet:c_saturn:none,Planet:c_mercury:none,Planet:c_jupiter:none,Planet:c_uranus:none,Planet:c_pluto:none
+vpack	TUTORIAL	7	2	p_arcana_normal_1	Tarot:c_world:none,Spectral:c_trance:none,Tarot:c_empress:none
+vreroll	TUTORIAL	7	Tarot:c_tower:none,Tarot:c_moon:none,Planet:c_uranus:none
+vshop	TUTORIAL	8	3	Joker:j_sly:none,Planet:c_earth:none,Joker:j_supernova:none	p_arcana_normal_4,p_arcana_mega_2
+vpack	TUTORIAL	8	1	p_arcana_normal_4	Tarot:c_devil:none,Tarot:c_chariot:none,Tarot:c_hermit:none
+vpack	TUTORIAL	8	2	p_arcana_mega_2	Tarot:c_heirophant:none,Tarot:c_magician:none,Tarot:c_tower:none,Tarot:c_star:none,Tarot:c_chariot:none
+vreroll	TUTORIAL	8	Joker:j_madness:none,Joker:j_red_card:none,Enhanced:m_stone:none:S_J
+vvoucher	AAAAAAAA	1	v_planet_merchant
+vtags	AAAAAAAA	1	tag_skip	tag_economy
+vshop	AAAAAAAA	1	1	Joker:j_bull:none,Planet:c_uranus:none,Tarot:c_sun:none	p_buffoon_normal_1,p_celestial_jumbo_2
+vpack	AAAAAAAA	1	1	p_buffoon_normal_1	Joker:j_shoot_the_moon:none,Joker:j_zany:none
+vpack	AAAAAAAA	1	2	p_celestial_jumbo_2	Planet:c_venus:none,Planet:c_mercury:none,Planet:c_mars:none,Planet:c_pluto:none,Planet:c_saturn:none
+vreroll	AAAAAAAA	1	Planet:c_pluto:none,Joker:j_faceless:none,Joker:j_misprint:foil
+vshop	AAAAAAAA	2	1	Joker:j_to_the_moon:none,Joker:j_green_joker:holo,Joker:j_sly:none	p_celestial_normal_1,p_standard_mega_2
+vpack	AAAAAAAA	2	1	p_celestial_normal_1	Planet:c_saturn:none,Planet:c_mars:none,Planet:c_mercury:none
+vpack	AAAAAAAA	2	2	p_standard_mega_2	Base:c_base:none:H_T:none,Enhanced:m_bonus:none:S_4:none,Base:c_base:none:H_Q:none,Base:c_base:none:D_A:Red,Base:c_base:none:S_9:none
+vreroll	AAAAAAAA	2	Base:c_base:none:C_7,Joker:j_misprint:none,Tarot:c_high_priestess:none
+vvoucher	AAAAAAAA	2	v_wasteful
+vtags	AAAAAAAA	2	tag_juggle	tag_ethereal
+vshop	AAAAAAAA	3	2	Tarot:c_chariot:none,Planet:c_jupiter:none,Tarot:c_heirophant:none	p_celestial_mega_2,p_standard_jumbo_2
+vpack	AAAAAAAA	3	1	p_celestial_mega_2	Planet:c_mercury:none,Planet:c_neptune:none,Planet:c_uranus:none,Planet:c_pluto:none,Planet:c_mars:none
+vpack	AAAAAAAA	3	2	p_standard_jumbo_2	Enhanced:m_stone:none:S_2:none,Base:c_base:none:S_7:none,Enhanced:m_gold:none:C_6:none,Enhanced:m_stone:none:H_7:none,Enhanced:m_bonus:none:H_6:none
+vreroll	AAAAAAAA	3	Planet:c_mars:none,Joker:j_bloodstone:none,Tarot:c_chariot:none
+vshop	AAAAAAAA	4	2	Planet:c_venus:none,Tarot:c_strength:none,Tarot:c_tower:none	p_arcana_mega_2,p_arcana_normal_3
+vpack	AAAAAAAA	4	1	p_arcana_mega_2	Tarot:c_heirophant:none,Tarot:c_empress:none,Tarot:c_hanged_man:none,Tarot:c_justice:none,Tarot:c_emperor:none
+vpack	AAAAAAAA	4	2	p_arcana_normal_3	Tarot:c_devil:none,Tarot:c_chariot:none,Spectral:c_ouija:none
+vreroll	AAAAAAAA	4	Planet:c_neptune:none,Tarot:c_sun:none,Base:c_base:none:S_Q
+vshop	AAAAAAAA	5	2	Planet:c_jupiter:none,Tarot:c_high_priestess:none,Tarot:c_moon:none	p_buffoon_jumbo_1,p_standard_normal_4
+vpack	AAAAAAAA	5	1	p_buffoon_jumbo_1	Joker:j_drunkard:none,Joker:j_popcorn:none,Joker:j_hanging_chad:none,Joker:j_green_joker:none
+vpack	AAAAAAAA	5	2	p_standard_normal_4	Enhanced:m_stone:none:D_3:Purple,Base:c_base:none:S_2:none,Base:c_base:none:D_5:none
+vreroll	AAAAAAAA	5	Planet:c_venus:none,Planet:c_neptune:none,Joker:j_abstract:none
+vvoucher	AAAAAAAA	3	v_planet_tycoon
+vtags	AAAAAAAA	3	tag_coupon	tag_uncommon
+vshop	AAAAAAAA	6	3	Tarot:c_magician:none,Planet:c_mars:none,Enhanced:m_mult:none:H_9	p_spectral_mega_1,p_standard_normal_2
+vpack	AAAAAAAA	6	1	p_spectral_mega_1	Spectral:c_deja_vu:none,Spectral:c_familiar:none,Spectral:c_ouija:none,Spectral:c_sigil:none
+vpack	AAAAAAAA	6	2	p_standard_normal_2	Base:c_base:none:S_K:none,Base:c_base:none:H_K:none,Enhanced:m_bonus:none:C_J:none
+vreroll	AAAAAAAA	6	Joker:j_selzer:none,Joker:j_seance:none,Joker:j_mad:none
+vshop	AAAAAAAA	7	3	Planet:c_venus:none,Joker:j_even_steven:none,Tarot:c_temperance:none	p_standard_jumbo_1,p_spectral_normal_2
+vpack	AAAAAAAA	7	1	p_standard_jumbo_1	Enhanced:m_steel:none:S_5:none,Base:c_base:none:C_2:none,Enhanced:m_glass:holo:S_9:Gold,Enhanced:m_steel:none:D_9:Blue,Enhanced:m_glass:none:D_6:none
+vpack	AAAAAAAA	7	2	p_spectral_normal_2	Spectral:c_incantation:none,Spectral:c_trance:none
+vreroll	AAAAAAAA	7	Planet:c_earth:none,Joker:j_crafty:none,Tarot:c_lovers:none
+vshop	AAAAAAAA	8	3	Planet:c_saturn:none,Planet:c_jupiter:none,Planet:c_mars:none	p_arcana_jumbo_2,p_standard_jumbo_2
+vpack	AAAAAAAA	8	1	p_arcana_jumbo_2	Spectral:c_familiar:none,Tarot:c_justice:none,Tarot:c_sun:none,Tarot:c_strength:none,Spectral:c_immolate:none
+vpack	AAAAAAAA	8	2	p_standard_jumbo_2	Base:c_base:foil:H_J:Purple,Enhanced:m_wild:none:C_4:none,Enhanced:m_wild:none:D_Q:Purple,Base:c_base:none:C_4:Blue,Enhanced:m_mult:none:S_A:none
+vreroll	AAAAAAAA	8	Tarot:c_fool:none,Tarot:c_justice:none,Joker:j_even_steven:none
+vvoucher	VOUCHER1	1	v_hieroglyph
+vtags	VOUCHER1	1	tag_uncommon	tag_economy
+vshop	VOUCHER1	1	1	Joker:j_mail:none,Planet:c_pluto:none,Tarot:c_justice:none	p_buffoon_normal_1,p_celestial_jumbo_2
+vpack	VOUCHER1	1	1	p_buffoon_normal_1	Joker:j_clever:none,Joker:j_duo:none
+vpack	VOUCHER1	1	2	p_celestial_jumbo_2	Planet:c_uranus:none,Planet:c_mercury:none,Planet:c_mars:none,Planet:c_neptune:none,Planet:c_venus:none
+vreroll	VOUCHER1	1	Joker:j_mime:foil,Joker:j_gift:foil,Tarot:c_hermit:none
+vshop	VOUCHER1	2	1	Planet:c_neptune:none,Base:c_base:foil:H_A,Enhanced:m_bonus:none:S_9	p_celestial_normal_3,p_standard_normal_2
+vpack	VOUCHER1	2	1	p_celestial_normal_3	Planet:c_earth:none,Planet:c_pluto:none,Planet:c_saturn:none
+vpack	VOUCHER1	2	2	p_standard_normal_2	Base:c_base:none:C_6:Red,Enhanced:m_bonus:none:C_6:none,Enhanced:m_stone:none:S_5:none
+vreroll	VOUCHER1	2	Joker:j_cloud_9:none,Tarot:c_strength:none,Joker:j_merry_andy:none
+vvoucher	VOUCHER1	2	v_glow_up
+vtags	VOUCHER1	2	tag_charm	tag_investment
+vshop	VOUCHER1	3	2	Tarot:c_strength:none,Joker:j_crazy:none,Tarot:c_world:none	p_celestial_jumbo_2,p_buffoon_jumbo_1
+vpack	VOUCHER1	3	1	p_celestial_jumbo_2	Planet:c_mercury:none,Planet:c_pluto:none,Planet:c_venus:none,Planet:c_earth:none,Planet:c_uranus:none
+vpack	VOUCHER1	3	2	p_buffoon_jumbo_1	Joker:j_marble:none,Joker:j_splash:none,Joker:j_turtle_bean:none,Joker:j_mad:foil
+vreroll	VOUCHER1	3	Joker:j_smiley:none,Joker:j_faceless:none,Planet:c_venus:none
+vshop	VOUCHER1	4	2	Base:c_base:none:C_J,Tarot:c_world:none,Joker:j_misprint:none	p_standard_normal_1,p_standard_normal_4
+vpack	VOUCHER1	4	1	p_standard_normal_1	Base:c_base:none:S_7:none,Base:c_base:none:D_2:none,Enhanced:m_mult:none:D_T:none
+vpack	VOUCHER1	4	2	p_standard_normal_4	Base:c_base:none:H_2:none,Enhanced:m_bonus:none:D_9:none,Base:c_base:none:H_5:none
+vreroll	VOUCHER1	4	Planet:c_mercury:none,Tarot:c_tower:none,Joker:j_half:none
+vshop	VOUCHER1	5	2	Joker:j_stencil:none,Joker:j_superposition:holo,Joker:j_hallucination:none	p_arcana_normal_2,p_standard_normal_2
+vpack	VOUCHER1	5	1	p_arcana_normal_2	Tarot:c_world:none,Tarot:c_magician:none,Tarot:c_sun:none
+vpack	VOUCHER1	5	2	p_standard_normal_2	Enhanced:m_wild:none:D_9:none,Enhanced:m_bonus:holo:S_7:Blue,Base:c_base:none:S_A:none
+vreroll	VOUCHER1	5	Planet:c_uranus:none,Tarot:c_world:none,Planet:c_neptune:none
+vvoucher	VOUCHER1	3	v_telescope
+vtags	VOUCHER1	3	tag_economy	tag_buffoon
+vshop	VOUCHER1	6	3	Planet:c_pluto:none,Joker:j_gros_michel:none,Tarot:c_wheel_of_fortune:none	p_standard_mega_2,p_standard_normal_4
+vpack	VOUCHER1	6	1	p_standard_mega_2	Base:c_base:none:C_8:none,Enhanced:m_stone:none:H_7:Blue,Base:c_base:polychrome:D_3:none,Enhanced:m_bonus:none:D_7:none,Base:c_base:none:D_6:none
+vpack	VOUCHER1	6	2	p_standard_normal_4	Base:c_base:none:D_T:none,Base:c_base:none:S_3:none,Enhanced:m_bonus:foil:C_J:none
+vreroll	VOUCHER1	6	Joker:j_odd_todd:none,Tarot:c_emperor:none,Joker:j_egg:none
+vshop	VOUCHER1	7	3	Tarot:c_lovers:none,Joker:j_duo:none,Joker:j_castle:none	p_standard_jumbo_2,p_celestial_jumbo_1
+vpack	VOUCHER1	7	1	p_standard_jumbo_2	Base:c_base:none:H_5:none,Enhanced:m_wild:none:S_K:Blue,Base:c_base:none:S_2:none,Base:c_base:none:D_6:none,Base:c_base:none:S_7:none
+vpack	VOUCHER1	7	2	p_celestial_jumbo_1	Planet:c_neptune:none,Planet:c_saturn:none,Planet:c_mars:none,Planet:c_mercury:none,Planet:c_jupiter:none
+vreroll	VOUCHER1	7	Tarot:c_magician:none,Planet:c_mercury:none,Tarot:c_empress:none
+vshop	VOUCHER1	8	3	Joker:j_clever:none,Joker:j_four_fingers:none,Tarot:c_magician:none	p_arcana_normal_2,p_standard_jumbo_2
+vpack	VOUCHER1	8	1	p_arcana_normal_2	Spectral:c_cryptid:none,Tarot:c_high_priestess:none,Tarot:c_moon:none
+vpack	VOUCHER1	8	2	p_standard_jumbo_2	Enhanced:m_glass:none:S_5:none,Base:c_base:none:C_4:Gold,Enhanced:m_gold:foil:C_A:none,Enhanced:m_lucky:none:H_Q:none,Base:c_base:none:C_8:none
+vreroll	VOUCHER1	8	Joker:j_satellite:foil,Joker:j_even_steven:none,Enhanced:m_bonus:none:C_5
+cemp	TUTORIAL	c_tower	c_high_priestess
+cpri	TUTORIAL	c_venus	c_mercury
+cjok	TUTORIAL	j_red_card:none	j_caino:none	j_trio:none
+cwheel	TUTORIAL	hit:foil,miss:none,miss:none,miss:none,miss:none,hit:holo
+cankh	TUTORIAL	2,1,3
+chex	TUTORIAL	2,2,2
+csigil	TUTORIAL	H,D,S,C
+couija	TUTORIAL	7,7,5,4
+caura	TUTORIAL	foil,holo,holo
+cfam	TUTORIAL	6	J:S:m_steel;K:S:m_bonus;J:C:m_gold
+cgrim	TUTORIAL	9	A:H:m_glass;A:D:m_bonus
+cinc	TUTORIAL	10	T:D:m_lucky;7:D:m_wild;4:D:m_glass;T:C:m_mult
+cimmo	TUTORIAL	5,11,13,2,1
+cecto	TUTORIAL	1,1,1
+cemp	AAAAAAAA	c_star	c_wheel_of_fortune
+cpri	AAAAAAAA	c_jupiter	c_mars
+cjok	AAAAAAAA	j_popcorn:none	j_perkeo:none	j_blueprint:none
+cwheel	AAAAAAAA	miss:none,miss:none,miss:none,miss:none,miss:none,miss:none
+cankh	AAAAAAAA	2,1,3
+chex	AAAAAAAA	3,2,3
+csigil	AAAAAAAA	D,H,H,D
+couija	AAAAAAAA	8,A,7,T
+caura	AAAAAAAA	polychrome,polychrome,foil
+cfam	AAAAAAAA	3	J:S:m_gold;Q:C:m_glass;K:H:m_lucky
+cgrim	AAAAAAAA	2	A:S:m_steel;A:D:m_steel
+cinc	AAAAAAAA	1	9:S:m_mult;T:S:m_bonus;9:H:m_gold;2:D:m_bonus
+cimmo	AAAAAAAA	11,6,8,10,9
+cecto	AAAAAAAA	2,1,2
+cemp	TAROTSED	c_hermit	c_temperance
+cpri	TAROTSED	c_pluto	c_uranus
+cjok	TAROTSED	j_mime:none	j_triboulet:none	j_invisible:none
+cwheel	TAROTSED	miss:none,miss:none,miss:none,hit:holo,miss:none,miss:none
+cankh	TAROTSED	1,3,2
+chex	TAROTSED	3,1,3
+csigil	TAROTSED	H,C,S,C
+couija	TAROTSED	5,5,3,J
+caura	TAROTSED	polychrome,holo,foil
+cfam	TAROTSED	5	J:S:m_lucky;J:S:m_lucky;K:D:m_bonus
+cgrim	TAROTSED	6	A:D:m_steel;A:S:m_bonus
+cinc	TAROTSED	7	2:H:m_steel;9:H:m_bonus;9:S:m_wild;6:H:m_gold
+cimmo	TAROTSED	13,7,3,14,8
+cecto	TAROTSED	1,2,1

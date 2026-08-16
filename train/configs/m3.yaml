@@ -1,0 +1,83 @@
+# M3: m1 + snapshot start-state mixing (backward curriculum) — 30% of
+# training episodes start from sampled mid-run snapshots (antes 3-7 pool),
+# annealed to 0 well before total_timesteps so the final eval regime is
+# fresh-start only. Curriculum promotion/milestone evals ALWAYS use fresh
+# starts (eval envs never load a pool).
+#
+# Prerequisites:
+#   cd train && uv run python -m balatro_train.gen_snapshots \
+#       --out runs/pools/pool_v1.bin            # (bot-only; ~50k target)
+#
+# Deploy (resuming from the M1 run — do NOT launch while m1 is live):
+#   kill "$(cat runs/m1/pid)"                   # graceful SIGTERM, then wait
+#   mkdir -p runs/m3
+#   nohup python -m balatro_train.ppo --config configs/m3.yaml \
+#       --resume runs/m1/ckpt_<LATEST>.pt \
+#       > runs/m3/train.log 2>&1 &  echo $! > runs/m3/pid
+# Monitor:  uv run tensorboard --logdir runs/   (snapshots/* charts:
+#   fraction, from-snapshot episode share, per-source returns/win-rates —
+#   fresh vs snapshot episodes are different populations; compare eval/*
+#   and curriculum/* for true progress).
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  num_envs: 2048
+  seed: 0
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 1000000000
+  rollout_len: 128          # 2048 x 128 = 262,144 transitions / iter
+  # See m1.yaml: mb 16k+ OOMs the 12GB RTX 4070 in the fp32 update path.
+  minibatch_size: 8192
+  update_epochs: 4
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  lr: 3.0e-4
+  anneal_lr: true           # linear to 0 over total_timesteps
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+curriculum:
+  enabled: true
+  start_ante: 1             # --resume restores the promoted win_ante
+  ladder: [1, 2, 3, 5, 8]
+  promote_winrate: 0.7
+  eval_every_steps: 2000000        # cheap promotion eval (argmax, held-out)
+  promotion_eval_episodes: 200
+  eval_num_envs: 100
+  eval_seed_base: 1000000
+  milestone_every_steps: 25000000  # full-game (win_ante 8) M-milestone eval
+  milestone_episodes: 200
+
+snapshots:
+  enabled: true
+  pool_path: runs/pools/pool_v1.bin
+  fraction: 0.3             # P(auto-reset starts from a pool snapshot)
+  anneal:                   # linear 0.3 -> 0 over steps 600M..900M, so the
+    start_step: 600000000   # last 100M steps (and the final eval) run on
+    end_step: 900000000     # fresh starts only
+    final_fraction: 0.0
+
+log:
+  run_name: m3
+  log_dir: runs
+  ckpt_dir: runs            # ckpt_dir/run_name == runs/m3 (next to TB events)
+  save_every_iters: 20      # ~5.2M steps per checkpoint
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

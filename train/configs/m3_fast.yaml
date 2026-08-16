@@ -1,0 +1,107 @@
+# M3-fast: configs/m3.yaml + throughput toggles (config.PerfConfig).
+# Training semantics are UNCHANGED except for reduced update precision
+# (perf.bf16_update; fp32 master weights + fp32 losses) and torch.compile
+# codegen — both validated by a 30-iteration win_ante=1 learning-curve
+# comparison (see train/README.md "Throughput").  Everything else
+# (buffer_device / pin_memory / auto_minibatch / fused_adam) is bit-exact.
+#
+# VRAM-portable: minibatch_size asks for the plan's 32768 and
+# perf.auto_minibatch probes it at startup (halving until it fits, floor
+# 1024), so this one file works on the local RTX 4070 12GB and a 5080 16GB
+# without edits.  buffer_device auto falls back to pinned-CPU when the GPU
+# is short on memory.
+#
+# Deploy (resuming from the M3 run — do NOT launch while m3 is live):
+#   kill "$(cat runs/m3/pid)"                   # graceful SIGTERM, then wait
+#   mkdir -p runs/m3_fast
+#   nohup python -m balatro_train.ppo --config configs/m3_fast.yaml \
+#       --resume runs/m3/ckpt_<LATEST>.pt \
+#       > runs/m3_fast/train.log 2>&1 &  echo $! > runs/m3_fast/pid
+# First iteration includes torch.compile warmup (~1-2 min); promotion evals
+# compile one extra batch-size specialization on their first run.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  num_envs: 2048
+  seed: 0
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 1000000000
+  rollout_len: 128          # 2048 x 128 = 262,144 transitions / iter
+  # 4096, NOT the plan's 32768. Measured on a 6GB RTX 4050: 4096 runs at
+  # ~5,250 steps/s, 16384 at ~640 -- an 8x collapse. auto_minibatch's probe
+  # calls 16384 "fitting" (7,702 MiB peak) but that leaves the card at
+  # ~5.8/6.1 GB, where it thrashes instead of cleanly OOMing. The probe
+  # measures whether a step FITS, not whether it is FAST.
+  minibatch_size: 4096
+  update_epochs: 4
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  lr: 3.0e-4
+  anneal_lr: true           # linear to 0 over total_timesteps
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true         # autocast bf16 update (fp32 master weights/losses)
+  compile: false            # torch.compile needs Triton, which has no official
+                             # Windows build (`pip install triton-windows` is
+                             # the working unofficial one). Measured worth only
+                             # ~5% here (610 -> 639 steps/s), so it is not what
+                             # gates throughput on this card -- minibatch_size
+                             # is. Left off to avoid the dependency and the
+                             # ~10 min first-run compile warmup.
+  buffer_device: cpu        # NOT auto: 'auto' sizes against the same optimistic
+                             # VRAM headroom estimate that auto_minibatch uses.
+  pin_memory: true          # pinned staging + non_blocking H2D
+  auto_minibatch: false     # OFF: its probe picked 16384 on this 6GB card and
+                             # cost 8x throughput. minibatch_size above is
+                             # hand-tuned for this GPU; re-tune it by
+                             # measurement when moving to a different card.
+  fused_adam: true          # single-kernel Adam step
+
+curriculum:
+  enabled: true
+  start_ante: 1             # --resume restores the promoted win_ante
+  ladder: [1, 2, 3, 5, 8]
+  promote_winrate: 0.7
+  eval_every_steps: 2000000        # cheap promotion eval (argmax, held-out)
+  promotion_eval_episodes: 200
+  eval_num_envs: 100
+  eval_seed_base: 1000000
+  milestone_every_steps: 25000000  # full-game (win_ante 8) M-milestone eval
+  milestone_episodes: 200
+
+snapshots:
+  enabled: true
+  pool_path: runs/pools/pool_v1.bin
+  fraction: 0.3             # P(auto-reset starts from a pool snapshot)
+  anneal:                   # linear 0.3 -> 0 over steps 600M..900M, so the
+    start_step: 600000000   # last 100M steps (and the final eval) run on
+    end_step: 900000000     # fresh starts only
+    final_fraction: 0.0
+
+log:
+  run_name: m3_fast
+  log_dir: runs
+  ckpt_dir: runs            # ckpt_dir/run_name == runs/m3_fast
+  save_every_iters: 20      # ~5.2M steps per checkpoint
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

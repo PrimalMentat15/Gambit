@@ -1,0 +1,15 @@
+[package]
+name = "balatro-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+p5-debug = []
+# P6: full-run snapshot/restore for the PyO3 vec-env. Serialization only —
+# no game-logic behavior is gated behind this feature.
+serde = ["dep:serde"]
+
+[dev-dependencies]

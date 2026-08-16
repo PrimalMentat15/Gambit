@@ -1,0 +1,26 @@
+[package]
+name = "balatro-sim-py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "balatro_sim"
+# rlib so `cargo test` can exercise the pure-Rust env logic without linking
+# libpython; the cdylib (with the `extension-module` feature, selected by
+# maturin via pyproject.toml) is the actual Python module.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+balatro-core = { path = "../core", features = ["serde"] }
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+pyo3 = { version = "0.25", features = ["abi3-py311"], optional = true }
+numpy = { version = "0.25", optional = true }
+
+[features]
+p5-debug = ["balatro-core/p5-debug"]
+default = []
+python = ["dep:pyo3", "dep:numpy"]
+extension-module = ["python", "pyo3/extension-module"]

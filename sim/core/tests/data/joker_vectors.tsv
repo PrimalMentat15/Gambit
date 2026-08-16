@@ -1,0 +1,320 @@
+roll	TUTORIAL	8ball	1	3fe0d180ad4861f4
+roll	TUTORIAL	8ball	2	3fe9e79049f531cc
+roll	TUTORIAL	8ball	3	3fec0309aecb0c1a
+roll	TUTORIAL	8ball	4	3fdf9f4753124598
+roll	TUTORIAL	8ball	5	3fe9a7e6c4b797d0
+roll	TUTORIAL	business	1	3fe07644f0ff9ab0
+roll	TUTORIAL	business	2	3fdf8d5c08cd1dac
+roll	TUTORIAL	business	3	3fdf1c818d5f3168
+roll	TUTORIAL	business	4	3fcf8343aafdb770
+roll	TUTORIAL	business	5	3fe9c5d33d097692
+roll	TUTORIAL	parking	1	3fdcddc2ef9a5f70
+roll	TUTORIAL	parking	2	3fdea355a0df5be0
+roll	TUTORIAL	parking	3	3fe0e55bb15dadfe
+roll	TUTORIAL	parking	4	3fe7153042dbb21a
+roll	TUTORIAL	parking	5	3fe9b737b09527f2
+roll	TUTORIAL	gros_michel	1	3fe928ad316ebf9a
+roll	TUTORIAL	gros_michel	2	3fdd1962a43127d0
+roll	TUTORIAL	gros_michel	3	3faa3f4704a1f1c0
+roll	TUTORIAL	gros_michel	4	3f44be245b15e800
+roll	TUTORIAL	gros_michel	5	3fbd0e7c793cc860
+roll	TUTORIAL	cavendish	1	3fbf2898d30fd980
+roll	TUTORIAL	cavendish	2	3fe392e9079d9e50
+roll	TUTORIAL	cavendish	3	3fc61d76dcb89158
+roll	TUTORIAL	cavendish	4	3fe439e76d9aca32
+roll	TUTORIAL	cavendish	5	3fe2ac66d8b7f210
+roll	TUTORIAL	halu1	1	3fe7ffc2d88c0006
+roll	TUTORIAL	halu1	2	3fe1d718e36a9f74
+roll	TUTORIAL	halu1	3	3fd8f27222cf35dc
+roll	TUTORIAL	halu1	4	3fe651dc25354500
+roll	TUTORIAL	halu1	5	3fb4b3310a68cdc0
+roll	TUTORIAL	halu2	1	3fea0aff76a11e0c
+roll	TUTORIAL	halu2	2	3fe8b541077f0776
+roll	TUTORIAL	halu2	3	3fe865f23f310ee6
+roll	TUTORIAL	halu2	4	3feb4b8be0610456
+roll	TUTORIAL	halu2	5	3fea7edd64573294
+misprint	TUTORIAL	1	20
+misprint	TUTORIAL	2	19
+misprint	TUTORIAL	3	11
+misprint	TUTORIAL	4	15
+misprint	TUTORIAL	5	13
+misprint	TUTORIAL	6	5
+misprint	TUTORIAL	7	12
+misprint	TUTORIAL	8	3
+to_do	TUTORIAL	1	Straight
+to_do	TUTORIAL	2	Flush Five
+to_do	TUTORIAL	3	Flush
+to_do	TUTORIAL	4	Two Pair
+to_do	TUTORIAL	5	Flush
+card_pick	TUTORIAL	mail1	1	1
+card_pick	TUTORIAL	mail1	2	43
+card_pick	TUTORIAL	mail1	3	8
+card_pick	TUTORIAL	mail2	1	4
+card_pick	TUTORIAL	mail2	2	5
+card_pick	TUTORIAL	mail2	3	43
+card_pick	TUTORIAL	idol1	1	8
+card_pick	TUTORIAL	idol1	2	38
+card_pick	TUTORIAL	idol1	3	51
+card_pick	TUTORIAL	cas1	1	5
+card_pick	TUTORIAL	cas1	2	16
+card_pick	TUTORIAL	cas1	3	21
+ancient	TUTORIAL	1	Hearts
+ancient	TUTORIAL	2	Spades
+ancient	TUTORIAL	3	Diamonds
+ancient	TUTORIAL	4	Hearts
+roll	AAAAAAAA	8ball	1	3fdc2f449faaa1fc
+roll	AAAAAAAA	8ball	2	3fdd687f6338956c
+roll	AAAAAAAA	8ball	3	3f77638152dfed00
+roll	AAAAAAAA	8ball	4	3febb41006173b30
+roll	AAAAAAAA	8ball	5	3f9ba716731c1780
+roll	AAAAAAAA	business	1	3fe945c58f24aa82
+roll	AAAAAAAA	business	2	3fe403ad7265e716
+roll	AAAAAAAA	business	3	3feb5d17ac412776
+roll	AAAAAAAA	business	4	3fe81d31a6305eb2
+roll	AAAAAAAA	business	5	3fee0010ca3e6352
+roll	AAAAAAAA	parking	1	3fe5839a4e17e1ac
+roll	AAAAAAAA	parking	2	3fe05b3d23488440
+roll	AAAAAAAA	parking	3	3fe544f18b7e5c96
+roll	AAAAAAAA	parking	4	3fea8d7e5f551a20
+roll	AAAAAAAA	parking	5	3fdda9fa6656abd0
+roll	AAAAAAAA	gros_michel	1	3fd91510769f523c
+roll	AAAAAAAA	gros_michel	2	3fb96661e3f19410
+roll	AAAAAAAA	gros_michel	3	3fcce4e17d853670
+roll	AAAAAAAA	gros_michel	4	3fe489a66f51e2ea
+roll	AAAAAAAA	gros_michel	5	3fd6235f97c72e9c
+roll	AAAAAAAA	cavendish	1	3fe66412b32b31b4
+roll	AAAAAAAA	cavendish	2	3fee7096f32dfec2
+roll	AAAAAAAA	cavendish	3	3fe4b359c4769bd6
+roll	AAAAAAAA	cavendish	4	3fe2110b22db2fec
+roll	AAAAAAAA	cavendish	5	3fd1f06bf4898bbc
+roll	AAAAAAAA	halu1	1	3fe188657bd10d9c
+roll	AAAAAAAA	halu1	2	3feb04a62c7a8066
+roll	AAAAAAAA	halu1	3	3fe96e4486666932
+roll	AAAAAAAA	halu1	4	3fc2bd436635bcb0
+roll	AAAAAAAA	halu1	5	3fe3240de2c81b78
+roll	AAAAAAAA	halu2	1	3fef965c5fcabc24
+roll	AAAAAAAA	halu2	2	3fdaba9fd910b45c
+roll	AAAAAAAA	halu2	3	3feddc088ddfd32a
+roll	AAAAAAAA	halu2	4	3fefaeac2279bda8
+roll	AAAAAAAA	halu2	5	3fea69e52d6aa7de
+misprint	AAAAAAAA	1	18
+misprint	AAAAAAAA	2	18
+misprint	AAAAAAAA	3	17
+misprint	AAAAAAAA	4	7
+misprint	AAAAAAAA	5	16
+misprint	AAAAAAAA	6	11
+misprint	AAAAAAAA	7	8
+misprint	AAAAAAAA	8	8
+to_do	AAAAAAAA	1	Four of a Kind
+to_do	AAAAAAAA	2	Straight
+to_do	AAAAAAAA	3	Flush House
+to_do	AAAAAAAA	4	Pair
+to_do	AAAAAAAA	5	Two Pair
+card_pick	AAAAAAAA	mail1	1	50
+card_pick	AAAAAAAA	mail1	2	4
+card_pick	AAAAAAAA	mail1	3	38
+card_pick	AAAAAAAA	mail2	1	25
+card_pick	AAAAAAAA	mail2	2	33
+card_pick	AAAAAAAA	mail2	3	22
+card_pick	AAAAAAAA	idol1	1	28
+card_pick	AAAAAAAA	idol1	2	28
+card_pick	AAAAAAAA	idol1	3	37
+card_pick	AAAAAAAA	cas1	1	22
+card_pick	AAAAAAAA	cas1	2	26
+card_pick	AAAAAAAA	cas1	3	51
+ancient	AAAAAAAA	1	Spades
+ancient	AAAAAAAA	2	Hearts
+ancient	AAAAAAAA	3	Clubs
+ancient	AAAAAAAA	4	Spades
+roll	7NLLGSMA	8ball	1	3fe9826af0d63db0
+roll	7NLLGSMA	8ball	2	3fbf59e803931470
+roll	7NLLGSMA	8ball	3	3fe0850b2278ab9e
+roll	7NLLGSMA	8ball	4	3fe84b8b6ed64ae0
+roll	7NLLGSMA	8ball	5	3fe2d0f4640e8f58
+roll	7NLLGSMA	business	1	3fe0fda6e37993be
+roll	7NLLGSMA	business	2	3fd49820a83da198
+roll	7NLLGSMA	business	3	3fc993e473c099a8
+roll	7NLLGSMA	business	4	3feab8faafc6491a
+roll	7NLLGSMA	business	5	3fcbec621b00b3e0
+roll	7NLLGSMA	parking	1	3fdecd6a9d94bda0
+roll	7NLLGSMA	parking	2	3fed185511b8f446
+roll	7NLLGSMA	parking	3	3fe8faf42cd64ce2
+roll	7NLLGSMA	parking	4	3fe5ed93ccb77280
+roll	7NLLGSMA	parking	5	3fe6873b7ccb1c54
+roll	7NLLGSMA	gros_michel	1	3fe275d2de2ed068
+roll	7NLLGSMA	gros_michel	2	3fe93eb6d38100e2
+roll	7NLLGSMA	gros_michel	3	3fc198ac5ecf4338
+roll	7NLLGSMA	gros_michel	4	3fed2da2214b44fe
+roll	7NLLGSMA	gros_michel	5	3fe2703d5d91a528
+roll	7NLLGSMA	cavendish	1	3f9b11d052cf1440
+roll	7NLLGSMA	cavendish	2	3fe1150f89092c9a
+roll	7NLLGSMA	cavendish	3	3fd771946179e25c
+roll	7NLLGSMA	cavendish	4	3feba707f7a29b04
+roll	7NLLGSMA	cavendish	5	3fe37eaa650867a6
+roll	7NLLGSMA	halu1	1	3fd2a4b3fa3871d8
+roll	7NLLGSMA	halu1	2	3fd0adc6c7e21bd4
+roll	7NLLGSMA	halu1	3	3f85ad176f314200
+roll	7NLLGSMA	halu1	4	3fe34d846cc78ce6
+roll	7NLLGSMA	halu1	5	3fda8f043e7f7590
+roll	7NLLGSMA	halu2	1	3fe870b187d72cd8
+roll	7NLLGSMA	halu2	2	3fe9bb47fff4d4b8
+roll	7NLLGSMA	halu2	3	3feddd988317521e
+roll	7NLLGSMA	halu2	4	3fe376ff53819b7e
+roll	7NLLGSMA	halu2	5	3fe2e5ca524717f0
+misprint	7NLLGSMA	1	0
+misprint	7NLLGSMA	2	0
+misprint	7NLLGSMA	3	6
+misprint	7NLLGSMA	4	2
+misprint	7NLLGSMA	5	23
+misprint	7NLLGSMA	6	18
+misprint	7NLLGSMA	7	1
+misprint	7NLLGSMA	8	5
+to_do	7NLLGSMA	1	Five of a Kind
+to_do	7NLLGSMA	2	Pair
+to_do	7NLLGSMA	3	Five of a Kind
+to_do	7NLLGSMA	4	Four of a Kind
+to_do	7NLLGSMA	5	High Card
+card_pick	7NLLGSMA	mail1	1	23
+card_pick	7NLLGSMA	mail1	2	45
+card_pick	7NLLGSMA	mail1	3	31
+card_pick	7NLLGSMA	mail2	1	47
+card_pick	7NLLGSMA	mail2	2	22
+card_pick	7NLLGSMA	mail2	3	21
+card_pick	7NLLGSMA	idol1	1	34
+card_pick	7NLLGSMA	idol1	2	24
+card_pick	7NLLGSMA	idol1	3	27
+card_pick	7NLLGSMA	cas1	1	16
+card_pick	7NLLGSMA	cas1	2	24
+card_pick	7NLLGSMA	cas1	3	21
+ancient	7NLLGSMA	1	Diamonds
+ancient	7NLLGSMA	2	Hearts
+ancient	7NLLGSMA	3	Spades
+ancient	7NLLGSMA	4	Diamonds
+roll	OOPS1234	8ball	1	3fe37677bedbad7c
+roll	OOPS1234	8ball	2	3fea9a75520c2fd6
+roll	OOPS1234	8ball	3	3fd167e4274a4858
+roll	OOPS1234	8ball	4	3fe97cc95beb1064
+roll	OOPS1234	8ball	5	3fe55c80b8229490
+roll	OOPS1234	business	1	3fcd21c7fade27f0
+roll	OOPS1234	business	2	3fc6dc2237e3e3d0
+roll	OOPS1234	business	3	3fcd4fda05beae40
+roll	OOPS1234	business	4	3fdbe57dbf193964
+roll	OOPS1234	business	5	3fef0da893fe012a
+roll	OOPS1234	parking	1	3febfb32881b0e78
+roll	OOPS1234	parking	2	3fe3697dd201b4a6
+roll	OOPS1234	parking	3	3fb57258004e2d20
+roll	OOPS1234	parking	4	3fe026d0d1f95d84
+roll	OOPS1234	parking	5	3fef86149e6bbbfe
+roll	OOPS1234	gros_michel	1	3feeacb1d8d12980
+roll	OOPS1234	gros_michel	2	3fe2bf9ff405c008
+roll	OOPS1234	gros_michel	3	3fd13cb451c86018
+roll	OOPS1234	gros_michel	4	3fd08ae49906f238
+roll	OOPS1234	gros_michel	5	3fed4854777da99c
+roll	OOPS1234	cavendish	1	3fb090075e324830
+roll	OOPS1234	cavendish	2	3fe270b19b9b0ac4
+roll	OOPS1234	cavendish	3	3f9ab18766b3e580
+roll	OOPS1234	cavendish	4	3fe8073db905fad0
+roll	OOPS1234	cavendish	5	3fe50f478405508c
+roll	OOPS1234	halu1	1	3fec56c1d13016dc
+roll	OOPS1234	halu1	2	3fe1133dc68cde94
+roll	OOPS1234	halu1	3	3f85390fa5087980
+roll	OOPS1234	halu1	4	3fe7abf78d50be0a
+roll	OOPS1234	halu1	5	3fd2d7f5de96aafc
+roll	OOPS1234	halu2	1	3faeaf22074a64c0
+roll	OOPS1234	halu2	2	3fcd5415fc2a9af8
+roll	OOPS1234	halu2	3	3fd421a3a0f058b0
+roll	OOPS1234	halu2	4	3fec5ac1ccbe3588
+roll	OOPS1234	halu2	5	3fc909bfa0f325a0
+misprint	OOPS1234	1	15
+misprint	OOPS1234	2	18
+misprint	OOPS1234	3	19
+misprint	OOPS1234	4	13
+misprint	OOPS1234	5	22
+misprint	OOPS1234	6	16
+misprint	OOPS1234	7	4
+misprint	OOPS1234	8	22
+to_do	OOPS1234	1	Full House
+to_do	OOPS1234	2	Flush
+to_do	OOPS1234	3	Five of a Kind
+to_do	OOPS1234	4	Flush Five
+to_do	OOPS1234	5	Pair
+card_pick	OOPS1234	mail1	1	5
+card_pick	OOPS1234	mail1	2	29
+card_pick	OOPS1234	mail1	3	44
+card_pick	OOPS1234	mail2	1	8
+card_pick	OOPS1234	mail2	2	39
+card_pick	OOPS1234	mail2	3	36
+card_pick	OOPS1234	idol1	1	12
+card_pick	OOPS1234	idol1	2	10
+card_pick	OOPS1234	idol1	3	39
+card_pick	OOPS1234	cas1	1	31
+card_pick	OOPS1234	cas1	2	15
+card_pick	OOPS1234	cas1	3	20
+ancient	OOPS1234	1	Diamonds
+ancient	OOPS1234	2	Spades
+ancient	OOPS1234	3	Hearts
+ancient	OOPS1234	4	Clubs
+roll	JKRVECT1	8ball	1	3fe3828e17fbaa44
+roll	JKRVECT1	8ball	2	3fbddd46e2b15750
+roll	JKRVECT1	8ball	3	3fe35954fe424814
+roll	JKRVECT1	8ball	4	3fe519c28adc48a4
+roll	JKRVECT1	8ball	5	3fe472e40234ebe0
+roll	JKRVECT1	business	1	3fea124333e54b00
+roll	JKRVECT1	business	2	3fe90e1c51f6e288
+roll	JKRVECT1	business	3	3fe15739b03b09bc
+roll	JKRVECT1	business	4	3fecf43d7800c9ca
+roll	JKRVECT1	business	5	3fd67b8001dc35b4
+roll	JKRVECT1	parking	1	3fe0ed992f4f4a18
+roll	JKRVECT1	parking	2	3fbac3e9de024d20
+roll	JKRVECT1	parking	3	3fe763caa3f1ab06
+roll	JKRVECT1	parking	4	3fc1bee925705430
+roll	JKRVECT1	parking	5	3fd26ab11bc611fc
+roll	JKRVECT1	gros_michel	1	3fba0b58f494ddd0
+roll	JKRVECT1	gros_michel	2	3f82e7fdd6daf500
+roll	JKRVECT1	gros_michel	3	3fdc495c93959900
+roll	JKRVECT1	gros_michel	4	3fd0a716cc9794c0
+roll	JKRVECT1	gros_michel	5	3fe5fb386649c0e8
+roll	JKRVECT1	cavendish	1	3fe6c3eb27a0fa26
+roll	JKRVECT1	cavendish	2	3febe23b3680e44e
+roll	JKRVECT1	cavendish	3	3fe7c6403ed35d54
+roll	JKRVECT1	cavendish	4	3f50004ad1721400
+roll	JKRVECT1	cavendish	5	3fd9211b8a8eb22c
+roll	JKRVECT1	halu1	1	3fe800e6158555d8
+roll	JKRVECT1	halu1	2	3fd53b31c25d91a0
+roll	JKRVECT1	halu1	3	3fb80f5aedccc430
+roll	JKRVECT1	halu1	4	3fe0154a1bbcf1c6
+roll	JKRVECT1	halu1	5	3fc8b3c91e398de0
+roll	JKRVECT1	halu2	1	3fc58df48da5aaa0
+roll	JKRVECT1	halu2	2	3feb3d6bc83ddaa4
+roll	JKRVECT1	halu2	3	3fe122fbb1717a8c
+roll	JKRVECT1	halu2	4	3fd9bef5135e7268
+roll	JKRVECT1	halu2	5	3fdf4b025d2d6800
+misprint	JKRVECT1	1	8
+misprint	JKRVECT1	2	13
+misprint	JKRVECT1	3	6
+misprint	JKRVECT1	4	22
+misprint	JKRVECT1	5	13
+misprint	JKRVECT1	6	12
+misprint	JKRVECT1	7	12
+misprint	JKRVECT1	8	23
+to_do	JKRVECT1	1	Two Pair
+to_do	JKRVECT1	2	Flush
+to_do	JKRVECT1	3	Pair
+to_do	JKRVECT1	4	Four of a Kind
+to_do	JKRVECT1	5	Flush
+card_pick	JKRVECT1	mail1	1	21
+card_pick	JKRVECT1	mail1	2	20
+card_pick	JKRVECT1	mail1	3	41
+card_pick	JKRVECT1	mail2	1	17
+card_pick	JKRVECT1	mail2	2	4
+card_pick	JKRVECT1	mail2	3	19
+card_pick	JKRVECT1	idol1	1	39
+card_pick	JKRVECT1	idol1	2	26
+card_pick	JKRVECT1	idol1	3	17
+card_pick	JKRVECT1	cas1	1	40
+card_pick	JKRVECT1	cas1	2	18
+card_pick	JKRVECT1	cas1	3	39
+ancient	JKRVECT1	1	Clubs
+ancient	JKRVECT1	2	Diamonds
+ancient	JKRVECT1	3	Hearts
+ancient	JKRVECT1	4	Diamonds

@@ -1,0 +1,14 @@
+{
+  "id": "botrun",
+  "name": "Bot Run Button",
+  "author": ["balatroagent"],
+  "description": "Adds a BOT RUN button to the main menu; the balatro-bridge-autoplay daemon picks up the request and plays a random-seed Red Deck / White Stake run with the trained policy.",
+  "prefix": "BOTRUN",
+  "main_file": "botrun.lua",
+  "priority": 0,
+  "badge_colour": "1E90FF",
+  "badge_text_colour": "FFFFFF",
+  "display_name": "BotRun",
+  "version": "1.0.0",
+  "dependencies": ["Steamodded (>=1.~)"]
+}

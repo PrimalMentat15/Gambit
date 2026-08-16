@@ -1,0 +1,321 @@
+key	set	order	name	cost	rarity	unlocked	weight	kind	extra	choose	max_highlighted	min_highlighted	mod_conv	suit_conv	hand_type	softlock	planets	tarots	remove_card	hidden	requires	min_ante	enhancement_gate	no_pool_flag	yes_pool_flag	blueprint_compat	perishable_compat	eternal_compat
+b_abandoned	Back	9	Abandoned Deck			0																						
+b_anaglyph	Back	13	Anaglyph Deck			0																						
+b_black	Back	5	Black Deck			0																						
+b_blue	Back	2	Blue Deck			0																						
+b_challenge	Back	16	Challenge Deck			1																						
+b_checkered	Back	10	Checkered Deck			0																						
+b_erratic	Back	15	Erratic Deck			0																						
+b_ghost	Back	8	Ghost Deck			0																						
+b_green	Back	4	Green Deck			0																						
+b_magic	Back	6	Magic Deck			0																						
+b_nebula	Back	7	Nebula Deck			0																						
+b_painted	Back	12	Painted Deck			0																						
+b_plasma	Back	14	Plasma Deck			0																						
+b_red	Back	1	Red Deck			1																						
+b_yellow	Back	3	Yellow Deck			0																						
+b_zodiac	Back	11	Zodiac Deck			0																						
+c_ankh	Spectral	11	Ankh	4					2																			
+c_aura	Spectral	5	Aura	4																								
+c_base	Default		Default Base																									
+c_black_hole	Spectral	18	Black Hole	4																1								
+c_ceres	Planet	11	Ceres	3											Flush House	1												
+c_chariot	Tarot	8	The Chariot	3							1		m_steel															
+c_cryptid	Spectral	16	Cryptid	4					2		1																	
+c_death	Tarot	14	Death	3							2	2	card															
+c_deja_vu	Spectral	12	Deja Vu	4					Red		1																	
+c_devil	Tarot	16	The Devil	3							1		m_gold															
+c_earth	Planet	3	Earth	3											Full House													
+c_ectoplasm	Spectral	9	Ectoplasm	4																								
+c_emperor	Tarot	5	The Emperor	3														2										
+c_empress	Tarot	4	The Empress	3							2		m_mult															
+c_eris	Planet	12	Eris	3											Flush Five	1												
+c_familiar	Spectral	1	Familiar	4					3										1									
+c_fool	Tarot	1	The Fool	3																								
+c_grim	Spectral	2	Grim	4					2										1									
+c_hanged_man	Tarot	13	The Hanged Man	3							2								1									
+c_heirophant	Tarot	6	The Hierophant	3							2		m_bonus															
+c_hermit	Tarot	10	The Hermit	3					20																			
+c_hex	Spectral	13	Hex	4					2																			
+c_high_priestess	Tarot	3	The High Priestess	3													2											
+c_immolate	Spectral	10	Immolate	4					destroy=5,dollars=20										1									
+c_incantation	Spectral	3	Incantation	4					4										1									
+c_judgement	Tarot	21	Judgement	3																								
+c_jupiter	Planet	5	Jupiter	3											Flush													
+c_justice	Tarot	9	Justice	3							1		m_glass															
+c_lovers	Tarot	7	The Lovers	3							1		m_wild															
+c_magician	Tarot	2	The Magician	3							2		m_lucky															
+c_mars	Planet	4	Mars	3											Four of a Kind													
+c_medium	Spectral	15	Medium	4					Purple		1																	
+c_mercury	Planet	1	Mercury	3											Pair													
+c_moon	Tarot	19	The Moon	3							3			Clubs														
+c_neptune	Planet	8	Neptune	3											Straight Flush													
+c_ouija	Spectral	8	Ouija	4																								
+c_planet_x	Planet	10	Planet X	3											Five of a Kind	1												
+c_pluto	Planet	9	Pluto	3											High Card													
+c_saturn	Planet	6	Saturn	3											Straight													
+c_sigil	Spectral	7	Sigil	4																								
+c_soul	Spectral	17	The Soul	4																1								
+c_star	Tarot	18	The Star	3							3			Diamonds														
+c_strength	Tarot	12	Strength	3							2		up_rank															
+c_sun	Tarot	20	The Sun	3							3			Hearts														
+c_talisman	Spectral	4	Talisman	4					Gold		1																	
+c_temperance	Tarot	15	Temperance	3					50																			
+c_tower	Tarot	17	The Tower	3							1		m_stone															
+c_trance	Spectral	14	Trance	4					Blue		1																	
+c_uranus	Planet	7	Uranus	3											Two Pair													
+c_venus	Planet	2	Venus	3											Three of a Kind													
+c_wheel_of_fortune	Tarot	11	The Wheel of Fortune	3					4																			
+c_world	Tarot	22	The World	3							3			Spades														
+c_wraith	Spectral	6	Wraith	4																								
+e_base	Edition	1	Base			1																						
+e_foil	Edition	2	Foil			1			50																			
+e_holo	Edition	3	Holographic			1			10																			
+e_negative	Edition	5	Negative			1			1																			
+e_polychrome	Edition	4	Polychrome			1			1.5																			
+j_8_ball	Joker	26	8 Ball	5	1	1			4																	1	1	1
+j_abstract	Joker	34	Abstract Joker	4	1	1			3																	1	1	1
+j_acrobat	Joker	108	Acrobat	6	2	0			3																	1	1	1
+j_ancient	Joker	99	Ancient Joker	8	3	1			1.5																	1	1	1
+j_arrowhead	Joker	118	Arrowhead	7	2	0			50																	1	1	1
+j_astronomer	Joker	143	Astronomer	8	2	0																				0	1	1
+j_banner	Joker	22	Banner	5	1	1			30																	1	1	1
+j_baron	Joker	72	Baron	8	3	1			1.5																	1	1	1
+j_baseball	Joker	92	Baseball Card	8	3	1			1.5																	1	1	1
+j_blackboard	Joker	48	Blackboard	6	2	1			3																	1	1	1
+j_bloodstone	Joker	117	Bloodstone	7	2	0																				1	1	1
+j_blue_joker	Joker	53	Blue Joker	5	1	1			2																	1	1	1
+j_blueprint	Joker	123	Blueprint	10	3	0																				1	1	1
+j_bootstraps	Joker	145	Bootstraps	7	2	0																				1	1	1
+j_brainstorm	Joker	138	Brainstorm	10	3	0																				1	1	1
+j_bull	Joker	93	Bull	6	2	1			2																	1	1	1
+j_burglar	Joker	47	Burglar	6	2	1			3																	1	1	1
+j_burnt	Joker	144	Burnt Joker	8	3	0			4																	1	1	1
+j_business	Joker	42	Business Card	4	1	1			2																	1	1	1
+j_caino	Joker	146	Caino	20	4	0			1																	1	1	1
+j_campfire	Joker	105	Campfire	9	3	1			0.25																	1	1	1
+j_card_sharp	Joker	62	Card Sharp	6	2	1																				1	1	1
+j_cartomancer	Joker	142	Cartomancer	6	2	0																				1	1	1
+j_castle	Joker	103	Castle	6	2	1																				1	0	1
+j_cavendish	Joker	61	Cavendish	4	1	1																			gros_michel_extinct	1	1	0
+j_ceremonial	Joker	21	Ceremonial Dagger	6	2	1																				1	0	1
+j_certificate	Joker	112	Certificate	6	2	0																				1	1	1
+j_chaos	Joker	30	Chaos the Clown	4	1	1			1																	0	1	1
+j_chicot	Joker	149	Chicot	20	4	0																				0	1	1
+j_clever	Joker	13	Clever Joker	4	1	1																				1	1	1
+j_cloud_9	Joker	73	Cloud 9	7	2	1			1																	0	1	1
+j_constellation	Joker	55	Constellation	6	2	1			0.10000000000000001																	1	0	1
+j_crafty	Joker	15	Crafty Joker	4	1	1																				1	1	1
+j_crazy	Joker	9	Crazy Joker	4	1	1																				1	1	1
+j_credit_card	Joker	20	Credit Card	1	1	1			20																	0	1	1
+j_delayed_grat	Joker	35	Delayed Gratification	4	1	1			2																	0	1	1
+j_devious	Joker	14	Devious Joker	4	1	1																				1	1	1
+j_diet_cola	Joker	94	Diet Cola	6	2	1																				1	1	0
+j_dna	Joker	51	DNA	8	3	1																				1	1	1
+j_drivers_license	Joker	141	Driver's License	7	3	0			3																	1	1	1
+j_droll	Joker	10	Droll Joker	4	1	1																				1	1	1
+j_drunkard	Joker	88	Drunkard	4	1	1																				0	1	1
+j_duo	Joker	131	The Duo	8	3	0																				1	1	1
+j_dusk	Joker	28	Dusk	5	2	1			1																	1	1	1
+j_egg	Joker	46	Egg	4	1	1			3																	0	1	1
+j_erosion	Joker	81	Erosion	6	2	1			4																	1	1	1
+j_even_steven	Joker	39	Even Steven	4	1	1			4																	1	1	1
+j_faceless	Joker	57	Faceless Joker	4	1	1																				1	1	1
+j_family	Joker	133	The Family	8	3	0																				1	1	1
+j_fibonacci	Joker	31	Fibonacci	8	2	1			8																	1	1	1
+j_flash	Joker	96	Flash Card	5	2	1			2																	1	0	1
+j_flower_pot	Joker	122	Flower Pot	6	2	0			3																	1	1	1
+j_fortune_teller	Joker	86	Fortune Teller	6	1	1			1																	1	1	1
+j_four_fingers	Joker	18	Four Fingers	7	2	1																				0	1	1
+j_gift	Joker	79	Gift Card	6	2	1			1																	0	1	1
+j_glass	Joker	120	Glass Joker	6	2	0			0.75														m_glass			1	0	1
+j_gluttenous_joker	Joker	5	Gluttonous Joker	5	1	1																				1	1	1
+j_golden	Joker	90	Golden Joker	6	1	1			4																	0	1	1
+j_greedy_joker	Joker	2	Greedy Joker	5	1	1																				1	1	1
+j_green_joker	Joker	58	Green Joker	4	1	1																				1	0	1
+j_gros_michel	Joker	38	Gros Michel	5	1	1																		gros_michel_extinct		1	1	0
+j_hack	Joker	36	Hack	6	2	1			1																	1	1	1
+j_half	Joker	16	Half Joker	5	1	1																				1	1	1
+j_hallucination	Joker	85	Hallucination	4	1	1			2																	1	1	1
+j_hanging_chad	Joker	115	Hanging Chad	4	1	0			2																	1	1	1
+j_hiker	Joker	56	Hiker	5	2	1			5																	1	1	1
+j_hit_the_road	Joker	130	Hit the Road	8	3	0			0.5																	1	1	1
+j_hologram	Joker	70	Hologram	7	2	1			0.25																	1	0	1
+j_ice_cream	Joker	50	Ice Cream	5	1	1																				1	1	0
+j_idol	Joker	127	The Idol	6	2	0			2																	1	1	1
+j_invisible	Joker	137	Invisible Joker	8	3	0			2																	0	1	0
+j_joker	Joker	1	Joker	2	1	1																				1	1	1
+j_jolly	Joker	6	Jolly Joker	3	1	1																				1	1	1
+j_juggler	Joker	87	Juggler	4	1	1																				0	1	1
+j_loyalty_card	Joker	25	Loyalty Card	5	2	1																				1	1	1
+j_luchador	Joker	77	Luchador	5	2	1																				1	1	0
+j_lucky_cat	Joker	91	Lucky Cat	6	2	1			0.25														m_lucky			1	0	1
+j_lusty_joker	Joker	3	Lusty Joker	5	1	1																				1	1	1
+j_mad	Joker	8	Mad Joker	4	1	1																				1	1	1
+j_madness	Joker	64	Madness	7	2	1			0.5																	1	0	1
+j_mail	Joker	83	Mail-In Rebate	4	1	1			5																	1	1	1
+j_marble	Joker	24	Marble Joker	6	2	1			1																	1	1	1
+j_matador	Joker	129	Matador	7	2	0			8																	1	1	1
+j_merry_andy	Joker	125	Merry Andy	7	2	0																				0	1	1
+j_midas_mask	Joker	76	Midas Mask	7	2	1																				0	1	1
+j_mime	Joker	19	Mime	5	2	1			1																	1	1	1
+j_misprint	Joker	27	Misprint	4	1	1																				1	1	1
+j_mr_bones	Joker	107	Mr. Bones	5	2	0																				0	1	0
+j_mystic_summit	Joker	23	Mystic Summit	5	1	1																				1	1	1
+j_obelisk	Joker	75	Obelisk	8	3	1			0.20000000000000001																	1	0	1
+j_odd_todd	Joker	40	Odd Todd	4	1	1			31																	1	1	1
+j_onyx_agate	Joker	119	Onyx Agate	7	2	0			7																	1	1	1
+j_oops	Joker	126	Oops! All 6s	4	2	0																				0	1	1
+j_order	Joker	134	The Order	8	3	0																				1	1	1
+j_pareidolia	Joker	37	Pareidolia	5	2	1																				0	1	1
+j_perkeo	Joker	150	Perkeo	20	4	0																				1	1	1
+j_photograph	Joker	78	Photograph	5	1	1			2																	1	1	1
+j_popcorn	Joker	97	Popcorn	5	1	1			4																	1	1	0
+j_raised_fist	Joker	29	Raised Fist	5	1	1																				1	1	1
+j_ramen	Joker	100	Ramen	6	2	1			0.01																	1	1	0
+j_red_card	Joker	63	Red Card	5	1	1			3																	1	0	1
+j_reserved_parking	Joker	82	Reserved Parking	6	1	1																				1	1	1
+j_ride_the_bus	Joker	44	Ride the Bus	6	1	1			1																	1	0	1
+j_riff_raff	Joker	67	Riff-raff	6	1	1			2																	1	1	1
+j_ring_master	Joker	121	Showman	5	2	0																				0	1	1
+j_rocket	Joker	74	Rocket	6	2	1																				0	0	1
+j_rough_gem	Joker	116	Rough Gem	7	2	0			1																	1	1	1
+j_runner	Joker	49	Runner	5	1	1																				1	0	1
+j_satellite	Joker	139	Satellite	6	2	0			1																	0	1	1
+j_scary_face	Joker	33	Scary Face	4	1	1			30																	1	1	1
+j_scholar	Joker	41	Scholar	4	1	1																				1	1	1
+j_seance	Joker	66	Seance	6	2	1																				1	1	1
+j_seeing_double	Joker	128	Seeing Double	6	2	0			2																	1	1	1
+j_selzer	Joker	102	Seltzer	6	2	1			10																	1	1	0
+j_shoot_the_moon	Joker	140	Shoot the Moon	5	1	0			13																	1	1	1
+j_shortcut	Joker	69	Shortcut	7	2	1																				0	1	1
+j_sixth_sense	Joker	54	Sixth Sense	6	2	1																				0	1	1
+j_sly	Joker	11	Sly Joker	3	1	1																				1	1	1
+j_smeared	Joker	113	Smeared Joker	7	2	0																				0	1	1
+j_smiley	Joker	104	Smiley Face	4	1	1			5																	1	1	1
+j_sock_and_buskin	Joker	109	Sock and Buskin	6	2	0			1																	1	1	1
+j_space	Joker	45	Space Joker	5	2	1			4																	1	1	1
+j_splash	Joker	52	Splash	3	1	1																				0	1	1
+j_square	Joker	65	Square Joker	4	1	1																				1	0	1
+j_steel_joker	Joker	32	Steel Joker	7	2	1			0.20000000000000001														m_steel			1	1	1
+j_stencil	Joker	17	Joker Stencil	8	2	1																				1	1	1
+j_stone	Joker	89	Stone Joker	6	2	1			25														m_stone			1	1	1
+j_stuntman	Joker	136	Stuntman	7	3	0																				1	1	1
+j_supernova	Joker	43	Supernova	5	1	1			1																	1	1	1
+j_superposition	Joker	59	Superposition	4	1	1																				1	1	1
+j_swashbuckler	Joker	110	Swashbuckler	4	1	0																				1	1	1
+j_throwback	Joker	114	Throwback	6	2	0			0.25																	1	1	1
+j_ticket	Joker	106	Golden Ticket	5	1	0			4														m_gold			1	1	1
+j_to_the_moon	Joker	84	To the Moon	5	2	1			1																	0	1	1
+j_todo_list	Joker	60	To Do List	4	1	1																				1	1	1
+j_trading	Joker	95	Trading Card	6	2	1			3																	0	1	1
+j_tribe	Joker	135	The Tribe	8	3	0																				1	1	1
+j_triboulet	Joker	147	Triboulet	20	4	0			2																	1	1	1
+j_trio	Joker	132	The Trio	8	3	0																				1	1	1
+j_troubadour	Joker	111	Troubadour	6	2	0																				0	1	1
+j_trousers	Joker	98	Spare Trousers	6	2	1			2																	1	0	1
+j_turtle_bean	Joker	80	Turtle Bean	6	2	1																				0	1	0
+j_vagabond	Joker	71	Vagabond	8	3	1			4																	1	1	1
+j_vampire	Joker	68	Vampire	7	2	1			0.10000000000000001																	1	0	1
+j_walkie_talkie	Joker	101	Walkie Talkie	4	1	1																				1	1	1
+j_wee	Joker	124	Wee Joker	8	3	0																				1	0	1
+j_wily	Joker	12	Wily Joker	4	1	1																				1	1	1
+j_wrathful_joker	Joker	4	Wrathful Joker	5	1	1																				1	1	1
+j_yorick	Joker	148	Yorick	20	4	0																				1	1	1
+j_zany	Joker	7	Zany Joker	4	1	1																				1	1	1
+m_bonus	Enhanced	2	Bonus																									
+m_glass	Enhanced	5	Glass Card						4																			
+m_gold	Enhanced	8	Gold Card																									
+m_lucky	Enhanced	9	Lucky Card																									
+m_mult	Enhanced	3	Mult																									
+m_steel	Enhanced	6	Steel Card																									
+m_stone	Enhanced	7	Stone Card																									
+m_wild	Enhanced	4	Wild Card																									
+p_arcana_jumbo_1	Booster	5	Jumbo Arcana Pack	6			1	Arcana	5	1																		
+p_arcana_jumbo_2	Booster	6	Jumbo Arcana Pack	6			1	Arcana	5	1																		
+p_arcana_mega_1	Booster	7	Mega Arcana Pack	8			0.25	Arcana	5	2																		
+p_arcana_mega_2	Booster	8	Mega Arcana Pack	8			0.25	Arcana	5	2																		
+p_arcana_normal_1	Booster	1	Arcana Pack	4			1	Arcana	3	1																		
+p_arcana_normal_2	Booster	2	Arcana Pack	4			1	Arcana	3	1																		
+p_arcana_normal_3	Booster	3	Arcana Pack	4			1	Arcana	3	1																		
+p_arcana_normal_4	Booster	4	Arcana Pack	4			1	Arcana	3	1																		
+p_buffoon_jumbo_1	Booster	27	Jumbo Buffoon Pack	6			0.59999999999999998	Buffoon	4	1																		
+p_buffoon_mega_1	Booster	28	Mega Buffoon Pack	8			0.14999999999999999	Buffoon	4	2																		
+p_buffoon_normal_1	Booster	25	Buffoon Pack	4			0.59999999999999998	Buffoon	2	1																		
+p_buffoon_normal_2	Booster	26	Buffoon Pack	4			0.59999999999999998	Buffoon	2	1																		
+p_celestial_jumbo_1	Booster	13	Jumbo Celestial Pack	6			1	Celestial	5	1																		
+p_celestial_jumbo_2	Booster	14	Jumbo Celestial Pack	6			1	Celestial	5	1																		
+p_celestial_mega_1	Booster	15	Mega Celestial Pack	8			0.25	Celestial	5	2																		
+p_celestial_mega_2	Booster	16	Mega Celestial Pack	8			0.25	Celestial	5	2																		
+p_celestial_normal_1	Booster	9	Celestial Pack	4			1	Celestial	3	1																		
+p_celestial_normal_2	Booster	10	Celestial Pack	4			1	Celestial	3	1																		
+p_celestial_normal_3	Booster	11	Celestial Pack	4			1	Celestial	3	1																		
+p_celestial_normal_4	Booster	12	Celestial Pack	4			1	Celestial	3	1																		
+p_spectral_jumbo_1	Booster	31	Jumbo Spectral Pack	6			0.29999999999999999	Spectral	4	1																		
+p_spectral_mega_1	Booster	32	Mega Spectral Pack	8			0.070000000000000007	Spectral	4	2																		
+p_spectral_normal_1	Booster	29	Spectral Pack	4			0.29999999999999999	Spectral	2	1																		
+p_spectral_normal_2	Booster	30	Spectral Pack	4			0.29999999999999999	Spectral	2	1																		
+p_standard_jumbo_1	Booster	21	Jumbo Standard Pack	6			1	Standard	5	1																		
+p_standard_jumbo_2	Booster	22	Jumbo Standard Pack	6			1	Standard	5	1																		
+p_standard_mega_1	Booster	23	Mega Standard Pack	8			0.25	Standard	5	2																		
+p_standard_mega_2	Booster	24	Mega Standard Pack	8			0.25	Standard	5	2																		
+p_standard_normal_1	Booster	17	Standard Pack	4			1	Standard	3	1																		
+p_standard_normal_2	Booster	18	Standard Pack	4			1	Standard	3	1																		
+p_standard_normal_3	Booster	19	Standard Pack	4			1	Standard	3	1																		
+p_standard_normal_4	Booster	20	Standard Pack	4			1	Standard	3	1																		
+v_antimatter	Voucher	24	Antimatter	10		0			15												v_blank							
+v_blank	Voucher	23	Blank	10		1			5																			
+v_clearance_sale	Voucher	3	Clearance Sale	10		1			25																			
+v_crystal_ball	Voucher	9	Crystal Ball	10		1			3																			
+v_directors_cut	Voucher	29	Director's Cut	10		1			10																			
+v_glow_up	Voucher	6	Glow Up	10		0			4												v_hone							
+v_grabber	Voucher	13	Grabber	10		1			1																			
+v_hieroglyph	Voucher	27	Hieroglyph	10		1			1																			
+v_hone	Voucher	5	Hone	10		1			2																			
+v_illusion	Voucher	26	Illusion	10		0			4												v_magic_trick							
+v_liquidation	Voucher	4	Liquidation	10		0			50												v_clearance_sale							
+v_magic_trick	Voucher	25	Magic Trick	10		1			4																			
+v_money_tree	Voucher	22	Money Tree	10		0			100												v_seed_money							
+v_nacho_tong	Voucher	14	Nacho Tong	10		0			1												v_grabber							
+v_observatory	Voucher	12	Observatory	10		0			1.5												v_telescope							
+v_omen_globe	Voucher	10	Omen Globe	10		0			4												v_crystal_ball							
+v_overstock_norm	Voucher	1	Overstock	10		1																						
+v_overstock_plus	Voucher	2	Overstock Plus	10		0															v_overstock_norm							
+v_paint_brush	Voucher	31	Paint Brush	10		1			1																			
+v_palette	Voucher	32	Palette	10		0			1												v_paint_brush							
+v_petroglyph	Voucher	28	Petroglyph	10		0			1												v_hieroglyph							
+v_planet_merchant	Voucher	19	Planet Merchant	10		1			2.3999999999999999																			
+v_planet_tycoon	Voucher	20	Planet Tycoon	10		0			8												v_planet_merchant							
+v_recyclomancy	Voucher	16	Recyclomancy	10		0			1												v_wasteful							
+v_reroll_glut	Voucher	8	Reroll Glut	10		0			2												v_reroll_surplus							
+v_reroll_surplus	Voucher	7	Reroll Surplus	10		1			2																			
+v_retcon	Voucher	30	Retcon	10		0			10												v_directors_cut							
+v_seed_money	Voucher	21	Seed Money	10		1			50																			
+v_tarot_merchant	Voucher	17	Tarot Merchant	10		1			2.3999999999999999																			
+v_tarot_tycoon	Voucher	18	Tarot Tycoon	10		0			8												v_tarot_merchant							
+v_telescope	Voucher	11	Telescope	10		1			3																			
+v_wasteful	Voucher	15	Wasteful	10		1			1																			
+tag_boss	Tag	9	Boss Tag																									
+tag_buffoon	Tag	13	Buffoon Tag																			2						
+tag_charm	Tag	11	Charm Tag																									
+tag_coupon	Tag	17	Coupon Tag																									
+tag_d_six	Tag	20	D6 Tag																									
+tag_double	Tag	18	Double Tag																									
+tag_economy	Tag	24	Economy Tag																									
+tag_ethereal	Tag	16	Ethereal Tag																			2						
+tag_foil	Tag	4	Foil Tag																		e_foil							
+tag_garbage	Tag	15	Garbage Tag																			2						
+tag_handy	Tag	14	Handy Tag																			2						
+tag_holo	Tag	5	Holographic Tag																		e_holo							
+tag_investment	Tag	7	Investment Tag																									
+tag_juggle	Tag	19	Juggle Tag																									
+tag_meteor	Tag	12	Meteor Tag																			2						
+tag_negative	Tag	3	Negative Tag																		e_negative	2						
+tag_orbital	Tag	23	Orbital Tag																			2						
+tag_polychrome	Tag	6	Polychrome Tag																		e_polychrome							
+tag_rare	Tag	2	Rare Tag																		j_blueprint							
+tag_skip	Tag	22	Skip Tag																									
+tag_standard	Tag	10	Standard Tag																			2						
+tag_top_up	Tag	21	Top-up Tag																			2						
+tag_uncommon	Tag	1	Uncommon Tag																									
+tag_voucher	Tag	8	Voucher Tag																									

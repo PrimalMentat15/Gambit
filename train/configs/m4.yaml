@@ -1,0 +1,85 @@
+# M4: cloud.yaml + reward-shaping anneal + extended schedule.
+# Trigger (plan): ante-8 win-rate crossed 10% (step ~450M on the cloud run).
+# β anneals 1.0 -> 0.1 over 500M..900M (shaped terms fade, +15 win bonus
+# unscaled), overlapping the snapshot-fraction anneal (600M..900M -> 0) so
+# both crutches are gone by 900M and everything after trains on fresh-start,
+# near-pure win signal. total_timesteps extends to 2B (M4/M5 plan budget);
+# lr anneal stretches accordingly on resume.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  num_envs: 4096
+  seed: 0
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 2000000000
+  rollout_len: 128
+  minibatch_size: 32768
+  update_epochs: 4
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  lr: 3.0e-4
+  anneal_lr: true
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: true
+  buffer_device: auto
+  pin_memory: true
+  auto_minibatch: true
+  fused_adam: true
+
+curriculum:
+  enabled: true
+  start_ante: 1
+  ladder: [1, 2, 3, 5, 8]
+  promote_winrate: 0.7
+  eval_every_steps: 2000000
+  promotion_eval_episodes: 200
+  eval_num_envs: 100
+  eval_seed_base: 1000000
+  milestone_every_steps: 25000000
+  milestone_episodes: 200
+
+snapshots:
+  enabled: true
+  pool_path: runs/pools/pool_v1.bin
+  fraction: 0.3
+  anneal:
+    start_step: 600000000
+    end_step: 900000000
+    final_fraction: 0.0
+
+shaping:
+  beta: 1.0
+  anneal:
+    start_step: 500000000
+    end_step: 900000000
+    final_beta: 0.1
+
+log:
+  run_name: m4
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

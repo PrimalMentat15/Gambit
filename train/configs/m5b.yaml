@@ -1,0 +1,83 @@
+# M5 second seed of the A/B winner (GPU 0 after m5's retirement): identical
+# to m5e2.yaml except seeds, resuming from the same 1.478B checkpoint.
+# Purpose: confirm the epochs-2 result isn't seed luck and keep a backup
+# lineage. A/B outcome (2026-07-17, ~4.4h in): m5e2 64.5-68% ante-8 argmax
+# at 2.18B vs m5 54.5-58% at 2.03B — epochs 2 won per wall-hour AND per-step.
+
+seed: 2
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  num_envs: 4096
+  seed: 100000
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 4000000000
+  rollout_len: 128
+  minibatch_size: 32768
+  update_epochs: 2
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  lr: 3.0e-4
+  anneal_lr: true
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: true
+  buffer_device: cuda
+  pin_memory: true
+  auto_minibatch: true
+  fused_adam: true
+
+curriculum:
+  enabled: true
+  start_ante: 1
+  ladder: [1, 2, 3, 5, 8]
+  promote_winrate: 0.7
+  eval_every_steps: 4000000
+  promotion_eval_episodes: 200
+  eval_num_envs: 100
+  eval_seed_base: 1000000
+  milestone_every_steps: 25000000
+  milestone_episodes: 200
+
+snapshots:
+  enabled: true
+  pool_path: runs/pools/pool_v1.bin
+  fraction: 0.3
+  anneal:
+    start_step: 600000000
+    end_step: 900000000
+    final_fraction: 0.0
+
+shaping:
+  beta: 1.0
+  anneal:
+    start_step: 500000000
+    end_step: 900000000
+    final_beta: 0.1
+
+log:
+  run_name: m5b
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

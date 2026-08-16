@@ -1,0 +1,8 @@
+# Machine-specific launch profiles (symlink farms recreated by launch.py)
+profiles/
+# uv / python
+.venv/
+__pycache__/
+*.pyc
+# balatrobot serve logs
+logs/
