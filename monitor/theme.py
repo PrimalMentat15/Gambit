@@ -17,6 +17,7 @@ import os
 os.environ.setdefault("PYQTGRAPH_QT_LIB", "PySide6")
 
 import pyqtgraph as pg
+from PySide6.QtCore import Qt
 
 # --- Surfaces and ink ---
 SURFACE = "#1a1a19"      # chart surface
@@ -184,9 +185,45 @@ def fill(color: str, alpha: int = 40):
     return brush
 
 
+def _make_row_toggleable(sample, label) -> None:
+    """
+    Let a whole legend row toggle its series, and look like it did
+
+    pyqtgraph already toggles when the small colour swatch is clicked, but the
+    swatch is a few pixels wide and nothing says it is interactive. Widening the
+    target to the label and dimming the text when hidden makes the state
+    legible: an unlabelled series that is simply absent from the plot is
+    indistinguishable from one that has no data yet.
+    """
+    text = label.text
+
+    def repaint() -> None:
+        visible = sample.item.isVisible()
+        label.setText(text, color=INK_2 if visible else AXIS, size="8pt")
+
+    def toggle(event) -> None:
+        sample.item.setVisible(not sample.item.isVisible())
+        repaint()
+        sample.update()
+        event.accept()
+
+    label.mouseClickEvent = toggle
+    label.setCursor(Qt.PointingHandCursor)
+    sample.setCursor(Qt.PointingHandCursor)
+    # The swatch keeps pyqtgraph's own handler; chain onto it so a swatch click
+    # updates the label's dimmed state too.
+    inner = sample.mouseClickEvent
+
+    def sample_click(event) -> None:
+        inner(event)
+        repaint()
+
+    sample.mouseClickEvent = sample_click
+
+
 def legend(plot: pg.PlotWidget, columns: int = 3):
     """
-    Attach a legend
+    Attach a legend whose entries toggle their series
 
     Present whenever a plot carries two or more series, so identity is never
     conveyed by colour alone.
@@ -195,6 +232,10 @@ def legend(plot: pg.PlotWidget, columns: int = 3):
     dragged short, and a tall legend in a short plot silently clips its own last
     entries -- which is worse than no legend, because the reader cannot tell it
     is incomplete.
+
+    Entries are wired as they are added rather than in one pass afterwards,
+    because callers build the legend before the curves it describes; a
+    one-shot pass here would find it empty.
     """
     leg = plot.getPlotItem().addLegend(
         offset=(-10, 6), labelTextColor=INK_2, labelTextSize="8pt",
@@ -202,6 +243,15 @@ def legend(plot: pg.PlotWidget, columns: int = 3):
     )
     leg.setBrush(pg.mkBrush(PAGE))
     leg.setPen(pg.mkPen(AXIS))
+
+    add_item = leg.addItem
+
+    def add_and_wire(item, name):
+        add_item(item, name)
+        if leg.items:
+            _make_row_toggleable(*leg.items[-1])
+
+    leg.addItem = add_and_wire
     return leg
 
 
@@ -263,10 +313,21 @@ class Crosshair:
             self.label.hide()
             return
 
-        point = item.getViewBox().mapSceneToView(position)
+        view = item.getViewBox()
+        point = view.mapSceneToView(position)
         # Nearest point by x, so the hit area is the whole column rather than
         # requiring a landing on the mark itself
         best = min(range(len(xs)), key=lambda i: abs(xs[i] - point.x()))
+
+        # Flip the label to the inside of whichever edge it is near. The most
+        # interesting sample in a live run is the newest one, which sits hard
+        # against the right edge -- with a fixed anchor its readout renders
+        # outside the plot and is clipped away exactly when it is most wanted.
+        (x0, x1), (y0, y1) = view.viewRange()
+        span_x, span_y = x1 - x0, y1 - y0
+        anchor_x = 1.0 if span_x and (xs[best] - x0) / span_x > 0.75 else 0.0
+        anchor_y = 0.0 if span_y and (ys[best] - y0) / span_y > 0.75 else 1.0
+        self.label.setAnchor((anchor_x, anchor_y))
 
         self.vline.setPos(xs[best])
         self.label.setPos(xs[best], ys[best])

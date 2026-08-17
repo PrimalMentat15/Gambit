@@ -107,6 +107,11 @@ class Panel(QObject):
     TITLE: str = "Panel"
     EVENT_TYPES: FrozenSet[str] = frozenset()  # empty means every type
     SIZE: Tuple[int, int] = (420, 260)
+    # Which Live sub-tab this panel belongs to. Nine panels on one screen means
+    # every plot is a few hundred pixels tall; splitting by the question being
+    # asked ("is it learning" vs "is the machinery healthy") keeps each page
+    # readable. "progress" and "diagnostics" are the two built pages.
+    PAGE: str = "progress"
 
     def __init__(self, config, parent=None):
         super().__init__(parent)

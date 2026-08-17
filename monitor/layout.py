@@ -13,6 +13,17 @@ from typing import Any, Optional
 LAYOUT_FILENAME = ".monitor_layout.json"
 
 
+def path_for(page: str) -> str:
+    """
+    Layout file for one Live page
+
+    Each page owns its arrangement: a state saved from one page lists only that
+    page's docks, so restoring it onto another would drop every panel the file
+    does not mention.
+    """
+    return f".monitor_layout_{page}.json"
+
+
 def save(area, path: str = LAYOUT_FILENAME) -> bool:
     """
     Write the dock arrangement to disk

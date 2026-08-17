@@ -30,6 +30,7 @@ class LossesPanel(Panel):
     NAME = "losses"
     TITLE = "PPO health"
     EVENT_TYPES = frozenset({"rollout"})
+    PAGE = "diagnostics"
     SIZE = (480, 320)
 
     def __init__(self, config, parent=None):

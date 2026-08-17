@@ -79,6 +79,7 @@ balatro-source-code/
 !assets/*.png
 !assets/*.ico
 .monitor_layout.json
+.monitor_layout_*.json
 monitor.json
 
 # Generated training data (rebuilt every run)

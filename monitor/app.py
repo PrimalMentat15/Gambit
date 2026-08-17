@@ -143,18 +143,45 @@ class MonitorWindow(QMainWindow):
         reset_layout.triggered.connect(self._reset_layout)
         bar.addAction(reset_layout)
 
+    # Live sub-tabs, in display order: (page key, tab label)
+    PAGES = (("progress", "Progress"), ("diagnostics", "Diagnostics"))
+
     def _build_tabs(self) -> None:
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.setCentralWidget(self.tabs)
 
-        self.live_area = DockArea()
-        self.tabs.addTab(self.live_area, "Live")
+        # One dock area per page. Nine panels in a single area gave every plot
+        # ~200px of height on a 1080p screen; split by the question each answers
+        # so both pages stay readable, and each keeps its own saved arrangement.
+        self.live_areas: dict = {}
+        for key, title in self.PAGES:
+            area = DockArea()
+            panels = [p for p in self.panels if getattr(p, "PAGE", "progress") == key]
+            self._fill_area(area, panels)
+            layout_store.load(area, layout_store.path_for(key))
+            self.live_areas[key] = area
+            self.tabs.addTab(area, title)
 
-        # Two-column grid, built in two passes. Adding a dock 'bottom' of one
-        # that already has a neighbour splits only that neighbour's cell, which
-        # nests splitters instead of making a row -- so stack the full-width row
-        # anchors first, then place the second column beside each of them.
+        # Kept as the primary area: Save/Reset layout and any caller that only
+        # knows about "the" dock area act on whichever page is in front.
+        self.live_area = self.live_areas[self.PAGES[0][0]]
+
+        self.control_tab = ControlTab(self.supervisor, self.config)
+        self.analysis_tab = AnalysisTab(self.config)
+        self.tabs.addTab(self.control_tab, "Control")
+        self.tabs.addTab(self.analysis_tab, "Analysis")
+
+    @staticmethod
+    def _fill_area(area: DockArea, panels: List) -> None:
+        """
+        Lay panels into a two-column grid
+
+        Built in two passes: adding a dock 'bottom' of one that already has a
+        neighbour splits only that neighbour's cell, which nests splitters
+        instead of making a row -- so stack the full-width row anchors first,
+        then place the second column beside each of them.
+        """
         def make_dock(panel) -> Dock:
             width, height = panel.SIZE
             # autoOrientation would rotate the title to vertical text down the
@@ -166,23 +193,21 @@ class MonitorWindow(QMainWindow):
             return dock
 
         anchors: List[Dock] = []
-        for index in range(0, len(self.panels), 2):
-            dock = make_dock(self.panels[index])
+        for index in range(0, len(panels), 2):
+            dock = make_dock(panels[index])
             if anchors:
-                self.live_area.addDock(dock, "bottom", anchors[-1])
+                area.addDock(dock, "bottom", anchors[-1])
             else:
-                self.live_area.addDock(dock)
+                area.addDock(dock)
             anchors.append(dock)
 
-        for row, index in enumerate(range(1, len(self.panels), 2)):
-            self.live_area.addDock(make_dock(self.panels[index]), "right", anchors[row])
+        for row, index in enumerate(range(1, len(panels), 2)):
+            area.addDock(make_dock(panels[index]), "right", anchors[row])
 
-        layout_store.load(self.live_area)
-
-        self.control_tab = ControlTab(self.supervisor, self.config)
-        self.analysis_tab = AnalysisTab(self.config)
-        self.tabs.addTab(self.control_tab, "Control")
-        self.tabs.addTab(self.analysis_tab, "Analysis")
+    def _current_area(self):
+        """The dock area of the Live page in front, or None on another tab"""
+        widget = self.tabs.currentWidget()
+        return widget if widget in self.live_areas.values() else None
 
     def _build_status(self) -> None:
         self.status = QStatusBar()
@@ -290,17 +315,27 @@ class MonitorWindow(QMainWindow):
     # --- Layout ---
 
     def _save_layout(self) -> None:
-        if layout_store.save(self.live_area):
-            self.status.showMessage("Layout saved", 2000)
+        """Save the arrangement of whichever Live page is in front"""
+        saved = [
+            title for key, title in self.PAGES
+            if self.live_areas[key] is self._current_area()
+            and layout_store.save(self.live_areas[key], layout_store.path_for(key))
+        ]
+        if saved:
+            self.status.showMessage(f"{saved[0]} layout saved", 2000)
+        elif self._current_area() is None:
+            self.status.showMessage(
+                "Switch to a Live page first — layouts are saved per page", 3000)
         else:
             self.status.showMessage("Could not save layout", 3000)
 
     def _reset_layout(self) -> None:
-        layout_store.clear()
+        for key, _title in self.PAGES:
+            layout_store.clear(layout_store.path_for(key))
         QMessageBox.information(
             self, "Layout reset",
-            "The saved layout has been cleared. Restart the monitor to see the "
-            "default arrangement."
+            "Saved layouts for both Live pages have been cleared. Restart the "
+            "monitor to see the default arrangement."
         )
 
     def closeEvent(self, event) -> None:

@@ -29,6 +29,7 @@ class ThroughputPanel(Panel):
     NAME = "throughput"
     TITLE = "Throughput"
     EVENT_TYPES = frozenset({"rollout", "session_start"})
+    PAGE = "diagnostics"
     SIZE = (480, 260)
 
     def __init__(self, config, parent=None):
@@ -37,6 +38,7 @@ class ThroughputPanel(Panel):
         self.total_steps = 0
         self.target_steps = 0
         self.rate = 0.0
+        self.trusted = False  # seen a real per-iteration rate yet?
 
     def build(self) -> QWidget:
         container = QWidget()
@@ -73,7 +75,17 @@ class ThroughputPanel(Panel):
             return
 
         step = data.get("global_step")
-        sps = data.get("sps_inst", data.get("sps"))
+        instant = data.get("sps_inst")
+        # Legacy streams only carry the session average, which is wrong for a
+        # resumed run: it divides an absolute step count by this session's
+        # elapsed time. Show it when it is all there is, but drop it the moment
+        # a real per-iteration rate arrives -- otherwise ~1000 iterations of
+        # decaying wrong values sit in the same series as the right ones and
+        # compress the axis until the real rate reads as a flat line at zero.
+        if instant is not None and not self.trusted:
+            self.trusted = True
+            self.series.clear()
+        sps = instant if instant is not None else data.get("sps")
         if step is None or sps is None:
             return
 
@@ -85,6 +97,7 @@ class ThroughputPanel(Panel):
         xs, ys = self.series.arrays(self.config.max_plot_points)
         self.curve.setData(xs, ys)
         self.crosshair.set_series(xs, ys)
+        self._scale_to_typical(ys)
 
         self.tile_rate.set_value(f"{self.rate:,.0f}" if self.rate else "--")
         self.tile_total.set_value(f"{self.total_steps:,}")
@@ -94,6 +107,32 @@ class ThroughputPanel(Panel):
             self.tile_eta.set_value(self._duration(remaining / self.rate))
         else:
             self.tile_eta.set_value("--")
+
+    def _scale_to_typical(self, ys) -> None:
+        """
+        Range the y axis to the bulk of the series, not its extremes
+
+        A resumed run recorded before the ``sps_inst`` fix carries a first
+        sample orders of magnitude too high (session-average throughput divided
+        by a near-zero elapsed time). Autoranging to that single point flattens
+        every real value onto the axis, so the chart of a healthy 5,000 steps/s
+        run reads as a flat line at zero. Scaling to the 98th percentile keeps
+        the working range legible; the outlier is still drawn, just clipped, and
+        the tile above always shows the true current rate.
+        """
+        if len(ys) < 8:
+            return
+        ordered = sorted(ys)
+        cutoff = ordered[int(len(ordered) * 0.98)]
+        if cutoff <= 0:
+            return
+        top = max(cutoff * 1.15, 1.0)
+        # Only clamp when an outlier actually distorts the view; otherwise leave
+        # pyqtgraph's own autorange alone.
+        if ordered[-1] > top:
+            self.plot.getPlotItem().setYRange(0, top)
+        else:
+            self.plot.getPlotItem().enableAutoRange(axis="y")
 
     @staticmethod
     def _duration(seconds: float) -> str:
@@ -113,3 +152,4 @@ class ThroughputPanel(Panel):
         self.total_steps = 0
         self.target_steps = 0
         self.rate = 0.0
+        self.trusted = False

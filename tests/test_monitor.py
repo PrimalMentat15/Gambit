@@ -27,6 +27,7 @@ from monitor import theme  # noqa: E402
 from monitor.bus import TailReader  # noqa: E402
 from monitor.config import MonitorConfig  # noqa: E402
 from monitor.panels import discover  # noqa: E402
+import pyqtgraph as pg  # noqa: E402
 
 
 def test_tail_reader():
@@ -83,6 +84,85 @@ def test_discovery():
         assert cls.NAME == name
         assert cls.TITLE and cls.EVENT_TYPES is not None
     print(f"discovered {len(panels)} panels: {', '.join(sorted(panels))}")
+
+
+def test_pages():
+    """Every panel lands on exactly one of the built Live pages"""
+    from monitor.app import MonitorWindow
+
+    pages = {key for key, _title in MonitorWindow.PAGES}
+    panels = discover()
+    for name, cls in sorted(panels.items()):
+        page = getattr(cls, "PAGE", "progress")
+        assert page in pages, f"{name} declares unknown page {page!r}"
+
+    by_page = {}
+    for name, cls in panels.items():
+        by_page.setdefault(getattr(cls, "PAGE", "progress"), []).append(name)
+    for key in pages:
+        assert by_page.get(key), f"page {key!r} has no panels"
+    print("pages: " + "; ".join(
+        f"{k}={sorted(v)}" for k, v in sorted(by_page.items())))
+
+
+def test_crosshair_anchor_flips_at_edges():
+    """The hover readout must stay inside the plot near its right/top edge"""
+    from PySide6.QtWidgets import QApplication
+    from monitor import theme
+
+    theme.configure()
+    QApplication.instance() or QApplication([])
+
+    plot = theme.make_plot()
+    cross = theme.Crosshair(plot)
+    xs = [0.0, 50.0, 100.0]
+    cross.set_series(xs, [0.0, 50.0, 100.0])
+
+    item = plot.getPlotItem()
+    view = item.getViewBox()
+    view.setXRange(0, 100, padding=0)
+    view.setYRange(0, 100, padding=0)
+
+    def anchor_at(x, y):
+        # Drive the handler directly: a synthetic hover needs a real scene
+        # position, and mapping view->scene is exactly what the handler undoes.
+        scene_pos = view.mapViewToScene(pg.Point(x, y))
+        cross._moved(scene_pos)
+        return (cross.label.anchor.x(), cross.label.anchor.y())
+
+    left = anchor_at(0.0, 0.0)
+    right = anchor_at(100.0, 100.0)
+    assert left[0] == 0.0, f"left edge should extend right, got anchor {left}"
+    assert right[0] == 1.0, f"right edge should extend left, got anchor {right}"
+    assert right[1] == 0.0, f"top edge should extend down, got anchor {right}"
+    print(f"crosshair anchors: near-origin {left}, near top-right {right}")
+
+
+def test_legend_toggles_series():
+    """Clicking a legend entry hides and restores its curve"""
+    from PySide6.QtWidgets import QApplication
+    from monitor import theme
+
+    theme.configure()
+    QApplication.instance() or QApplication([])
+
+    plot = theme.make_plot()
+    legend = theme.legend(plot)
+    curve = plot.plot([0, 1], [0, 1], pen=theme.pen(theme.SERIES[0]), name="a")
+    plot.plot([0, 1], [1, 0], pen=theme.pen(theme.SERIES[1]), name="b")
+
+    assert len(legend.items) == 2, f"legend wired {len(legend.items)} entries"
+    sample, label = legend.items[0]
+
+    class _Event:
+        def accept(self): pass
+
+    assert curve.isVisible()
+    label.mouseClickEvent(_Event())
+    assert not curve.isVisible(), "clicking the label should hide the curve"
+    label.mouseClickEvent(_Event())
+    assert curve.isVisible(), "clicking again should restore the curve"
+    print("legend toggle: label click hides and restores its series")
 
 
 def test_render(run_dir=None, out_path="monitor_preview.png"):
@@ -289,5 +369,8 @@ if __name__ == "__main__":
 
     test_tail_reader()
     test_discovery()
+    test_pages()
+    test_crosshair_anchor_flips_at_edges()
+    test_legend_toggles_series()
     test_render(run, out)
     print("\nALL MONITOR TESTS PASSED")

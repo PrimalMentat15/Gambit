@@ -28,6 +28,7 @@ class AnnealPanel(Panel):
     NAME = "anneal"
     TITLE = "Anneals"
     EVENT_TYPES = frozenset({"rollout"})
+    PAGE = "diagnostics"
     SIZE = (420, 260)
 
     def __init__(self, config, parent=None):

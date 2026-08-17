@@ -29,6 +29,7 @@ class ActionDistPanel(Panel):
     NAME = "actions"
     TITLE = "Action distribution"
     EVENT_TYPES = frozenset({"rollout"})
+    PAGE = "diagnostics"
     SIZE = (560, 260)
 
     def __init__(self, config, parent=None):
