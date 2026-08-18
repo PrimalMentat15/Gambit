@@ -47,6 +47,81 @@ compatdata/.../AppData/Roaming/Balatro/Mods -> ~/.config/Balatro/Mods -> ~/.loca
 so installing into `~/.local/share/Balatro/Mods/` is exactly the documented
 location. (Set up by Balatro Mod Manager; BMM compat mode itself is disabled.)
 
+## Windows (native, no Proton)
+
+The bridge runs on Windows without Steam or Proton. Paths and the link strategy
+switch automatically; what differs from the Linux flow:
+
+| | Linux (Proton) | Windows (native) |
+|---|---|---|
+| Mods dir | `~/.local/share/Balatro/Mods` | `%APPDATA%\Balatro\Mods` |
+| Save dir | Steam `compatdata` Wine prefix | `%APPDATA%\Balatro` |
+| `LOVELY_MOD_DIR` | `Z:`-mapped Wine path | plain Windows path |
+| Profile links | symlinks | symlinks, else directory junctions |
+| Stopping `serve` | SIGINT | `terminate()` |
+
+Directory *symlinks* on Windows need Developer Mode or an elevated shell;
+*junctions* need neither and work identically here, so the launcher tries a
+symlink and falls back rather than demanding elevation.
+
+### Prerequisites
+
+1. **Lovely injector** — `version.dll` beside `Balatro.exe`.
+2. **Steamodded** → `%APPDATA%\Balatro\Mods\smods\`
+3. **balatrobot v1.5.2** (must match the pinned PyPI client) →
+   `%APPDATA%\Balatro\Mods\balatrobot\`
+
+The launcher builds its isolated profile from the last two, so it fails with a
+named error if either is missing rather than launching an unmodded game.
+
+**Extracting a release zip is fine either way.** A GitHub release zip expands
+to `Mods/smods/smods-1.0.0-beta-1814a/` rather than `Mods/smods/` directly —
+one folder level deeper than Lovely (`Mods/<mod>/lovely/*.toml`) and Steamodded
+(`Mods/<mod>/manifest.json`) expect. Left alone, both scanners find nothing at
+that extra level, load nothing, and Balatro starts completely unmodded with
+**no error** — the only symptom is the API health check timing out 30s later,
+which looks like a networking problem, not a mod-loading one. The launcher
+detects this wrapper layout and links straight to the inner directory, so
+extracting a zip as-is or renaming the inner folder both work; nothing to do
+here. If you ever hit the same silent-unmodded symptom some other way, the
+tell is `bridge/profiles/vanilla/Mods/lovely/log/<latest>.log`: a healthy run
+lists loaded patch files, a broken one says `Initialization complete` with
+nothing above it.
+
+### Environment
+
+`balatrobot serve` finds Steam, Proton and the game by itself on Linux. Native
+Windows has none of that to go on, so point it at the executable:
+
+```bash
+set BALATRO_EXE=C:\path\to\Balatro.exe
+```
+
+`--platform windows` is added automatically, and `--lovely-path` defaults to
+`version.dll` beside that executable.
+
+Note the flag is `--love-path`, not the more obvious `--balatro-path`:
+balatrobot's Windows launcher validates and launches `config.love_path`, and
+falls back to a hardcoded Steam location when it is unset. Passing only
+`--balatro-path` therefore fails with `Balatro executable not found:
+C:\Program Files (x86)\Steam\...` no matter how correct your path was. The
+launcher here passes the right one.
+
+Overrides, all optional:
+
+| Variable | Purpose |
+|---|---|
+| `BALATRO_EXE` | Path to `Balatro.exe` |
+| `LOVELY_DLL` | Path to `version.dll` (default: beside the exe) |
+| `BALATRO_MODS_DIR` | Override the user Mods dir |
+| `BALATRO_SAVE_DIR` | Override the love.filesystem save dir |
+
+Then launch as usual — `--gamespeed 4` (the default) is the pace to watch at:
+
+```bash
+balatro-bridge-launch
+```
+
 ## Running a "vanilla + balatrobot only" instance (for cross-validation)
 
 The user Mods dir also contains content mods (Cryptid, Talisman, Blueprint,

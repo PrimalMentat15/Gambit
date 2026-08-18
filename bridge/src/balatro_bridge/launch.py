@@ -64,10 +64,29 @@ import sys
 import time
 from pathlib import Path
 
-# The real, user-wide Mods directory (also reachable by the game via
-# compatdata .../AppData/Roaming/Balatro/Mods -> ~/.config/Balatro/Mods ->
-# ~/.local/share/Balatro/Mods symlinks).
-USER_MODS_DIR = Path.home() / ".local/share/Balatro/Mods"
+IS_WINDOWS = sys.platform == "win32"
+
+
+def _user_mods_dir() -> Path:
+    """
+    The real, user-wide Mods directory for this platform
+
+    On Linux the game runs as a Windows build under Proton, and its Mods dir is
+    reachable through a chain of symlinks from the XDG location. On Windows it
+    is simply the save directory's Mods subfolder -- the same place Steamodded
+    and Lovely look. ``BALATRO_MODS_DIR`` overrides both.
+    """
+    override = os.environ.get("BALATRO_MODS_DIR")
+    if override:
+        return Path(override)
+    if IS_WINDOWS or sys.platform == "darwin":
+        from balatro_bridge.paths import BALATRO_SAVE_DIR
+
+        return BALATRO_SAVE_DIR / "Mods"
+    return Path.home() / ".local/share/Balatro/Mods"
+
+
+USER_MODS_DIR = _user_mods_dir()
 
 # Directories from USER_MODS_DIR that make up the "vanilla + bot" profile.
 # smods dir name is matched by glob so an smods upgrade doesn't break this.
@@ -89,8 +108,75 @@ def unix_to_wine_path(path: Path) -> str:
 
     Proton maps the host filesystem root to the Z: drive, so
     /home/teq/x is Z:/home/teq/x for the Windows-built lovely injector.
+
+    A native Windows run has no Wine layer, so the path is already what lovely
+    expects and is returned unchanged.
     """
+    if IS_WINDOWS:
+        return str(path)
     return "Z:" + str(path)
+
+
+def _resolve_mod_root(path: Path) -> Path:
+    """
+    Descend into a release-zip wrapper directory, if there is one
+
+    Extracting a GitHub release lands the mod one level deeper than the loader
+    expects -- ``Mods/smods/smods-1.0.0-beta-1814a/`` rather than
+    ``Mods/smods/``. Lovely scans ``Mods/<mod>/lovely/*.toml`` and Steamodded
+    reads ``Mods/<mod>/manifest.json``, so with the extra level both find
+    nothing, load nothing, and start a completely unmodded game with no error:
+    the launcher comes up, the API never answers, and the only symptom is a
+    health-check timeout.
+
+    A directory holding a single subdirectory and none of the mod markers is
+    such a wrapper, so follow it.
+    """
+    markers = ("manifest.json", "lovely")
+    for _ in range(3):  # bounded: nobody nests a release more than this
+        if any((path / m).exists() for m in markers):
+            return path
+        if any(path.glob("*.lua")):
+            return path
+        children = [c for c in path.iterdir() if c.is_dir()]
+        if len(children) != 1:
+            return path
+        path = children[0]
+    return path
+
+
+def _is_link(path: Path) -> bool:
+    """True for a symlink or (on Windows) a directory junction"""
+    return path.is_symlink() or os.path.isjunction(path)
+
+
+def _unlink(path: Path) -> None:
+    """Remove a link without touching what it points at"""
+    if os.path.isjunction(path) or (IS_WINDOWS and path.is_dir()):
+        os.rmdir(path)  # removes the reparse point, not the target
+    else:
+        path.unlink()
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    """
+    Point ``link`` at ``target`` using whatever this platform allows
+
+    Creating a directory *symlink* on Windows needs Developer Mode or an
+    elevated shell; a *junction* needs neither and behaves the same for this
+    purpose. Try the symlink first so the result is identical across platforms
+    when permissions allow, and fall back rather than demanding elevation.
+    """
+    if not IS_WINDOWS:
+        link.symlink_to(target)
+        return
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except OSError:
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            check=True, capture_output=True,
+        )
 
 
 def build_vanilla_profile(profile_mods: Path) -> list[str]:
@@ -111,26 +197,30 @@ def build_vanilla_profile(profile_mods: Path) -> list[str]:
     if not balatrobot_dir.is_dir():
         raise RuntimeError(f"balatrobot mod not found at {balatrobot_dir}")
 
-    wanted = {d.name: d for d in (smods_dirs[0], balatrobot_dir)}
+    # Link the directory the loaders actually read, which is one level in when
+    # the mod was installed by extracting a release zip.
+    wanted = {
+        d.name: _resolve_mod_root(d) for d in (smods_dirs[0], balatrobot_dir)
+    }
     for name in REPO_MOD_NAMES:
         repo_mod = REPO_MODS_DIR / name
         if repo_mod.is_dir():
-            wanted[name] = repo_mod
+            wanted[name] = _resolve_mod_root(repo_mod)
 
     profile_mods.mkdir(parents=True, exist_ok=True)
-    # Drop stale entries (old smods versions, renamed mods) -- symlinks only.
+    # Drop stale entries (old smods versions, renamed mods) -- links only.
     for entry in profile_mods.iterdir():
-        if entry.is_symlink() and entry.name not in wanted:
-            entry.unlink()
+        if _is_link(entry) and entry.name not in wanted:
+            _unlink(entry)
     for name, target in wanted.items():
         link = profile_mods / name
-        if link.is_symlink():
+        if _is_link(link):
             if link.resolve() == target.resolve():
                 continue
-            link.unlink()
+            _unlink(link)
         elif link.exists():
-            raise RuntimeError(f"{link} exists and is not a symlink; refusing to touch")
-        link.symlink_to(target)
+            raise RuntimeError(f"{link} exists and is not a link; refusing to touch")
+        _link_dir(link, target)
     return sorted(wanted)
 
 
@@ -155,10 +245,19 @@ def _api_up(port: int) -> bool:
 
 
 def _stop(proc: subprocess.Popen) -> None:
-    """SIGINT serve (it does its own Proton/wineserver cleanup), then kill."""
+    """Ask serve to shut down (it cleans up Proton/wineserver), then kill.
+
+    Windows has no SIGINT delivery to another process the way POSIX does --
+    send_signal(SIGINT) there either raises or fells this process instead of the
+    child -- so terminate() is the portable request. There is no wineserver to
+    wind down on Windows anyway.
+    """
     if proc.poll() is not None:
         return
-    proc.send_signal(signal.SIGINT)
+    if IS_WINDOWS:
+        proc.terminate()
+    else:
+        proc.send_signal(signal.SIGINT)
     try:
         proc.wait(timeout=30)
     except subprocess.TimeoutExpired:
@@ -225,6 +324,50 @@ def supervise(cmd: list[str], env: dict[str, str], port: int) -> int:
             return 0
 
 
+def _add_platform_args(serve_args: list[str]) -> list[str]:
+    """
+    Tell `balatrobot serve` where things are when it cannot work it out itself
+
+    On Linux it locates Steam, a Proton build and the game on its own. A native
+    Windows install has none of that to go on, so the executable and the lovely
+    library have to be named explicitly. Anything the caller already passed is
+    left alone.
+
+    Env:
+        BALATRO_EXE  -- path to Balatro.exe
+        LOVELY_DLL   -- path to version.dll (defaults to beside the exe)
+    """
+    if not IS_WINDOWS:
+        return serve_args
+
+    args = list(serve_args)
+    if not any(a == "--platform" or a.startswith("--platform=") for a in args):
+        args += ["--platform", "windows"]
+
+    # --love-path, NOT --balatro-path: balatrobot's Windows launcher validates
+    # and launches config.love_path (platforms/windows.py), and silently falls
+    # back to a hardcoded Steam location when it is None -- so passing only
+    # --balatro-path fails with "not found: C:\\Program Files (x86)\\Steam\\..."
+    # however correct the path you supplied was.
+    exe = os.environ.get("BALATRO_EXE")
+    has_path = any(a == "--love-path" or a.startswith("--love-path=")
+                   for a in args)
+    if exe and not has_path:
+        args += ["--love-path", exe]
+
+    lovely = os.environ.get("LOVELY_DLL")
+    if not lovely and exe:
+        # Lovely injects by sitting next to the executable as version.dll
+        beside = Path(exe).parent / "version.dll"
+        lovely = str(beside) if beside.is_file() else None
+    has_lovely = any(a == "--lovely-path" or a.startswith("--lovely-path=")
+                     for a in args)
+    if lovely and not has_lovely:
+        args += ["--lovely-path", lovely]
+
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="balatro-bridge-launch",
@@ -282,6 +425,8 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+
+    serve_args = _add_platform_args(serve_args)
 
     cmd = [balatrobot_cli, "serve", *serve_args]
     print(f"[bridge] exec: {' '.join(cmd)}")

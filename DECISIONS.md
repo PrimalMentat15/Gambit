@@ -734,3 +734,58 @@ about the component that happened to throw the loudest error.
 A second, narrower lesson: an autotuner is only as good as the quantity it
 measures. This one measures a boolean (does it fit) and was trusted for a
 continuous one (how fast is it).
+
+---
+
+## Phase 2d — bridge gains native Windows support
+
+**Decision:** `bridge/` no longer assumes Linux + Steam + Proton. Paths, the
+profile-link strategy, and process signalling all branch on platform, and
+`balatrobot serve` is handed explicit paths on Windows since it cannot locate
+Steam or a game to infer them from.
+
+**What changed**, concretely: `paths.py` resolves the love.filesystem save
+directory per platform (`%APPDATA%\Balatro` on Windows, the Proton compatdata
+prefix on Linux, both overridable via `BALATRO_SAVE_DIR`); `launch.py` resolves
+the user Mods directory the same way (`BALATRO_MODS_DIR` override); directory
+links fall back from symlinks to junctions when Developer Mode / elevation
+isn't available; `unix_to_wine_path` is a no-op on native Windows instead of
+prepending `Z:`; stopping `serve` uses `terminate()` instead of `send_signal
+(SIGINT)`, since POSIX signal delivery to another process doesn't exist on
+Windows the way `_stop()` assumed.
+
+**Two failures found only by actually running it**, both silent in a way worth
+recording:
+
+1. **Wrong CLI flag.** balatrobot's Windows launcher (`platforms/windows.py`)
+   validates and launches `config.love_path`, not `config.balatro_path`, and
+   silently substitutes a hardcoded Steam path when `love_path` is `None`.
+   Passing `--balatro-path` therefore "succeeds" at the argument-parsing level
+   and fails 30 seconds later with `Balatro executable not found:
+   C:\Program Files (x86)\Steam\...` — a path the user never supplied, pointing
+   suspicion at Steam/the install rather than the flag name.
+
+2. **Release-zip nesting.** Extracting a Steamodded or balatrobot release zip
+   produces `Mods/smods/smods-1.0.0-beta-1814a/`, one directory level below
+   where Lovely (`Mods/<mod>/lovely/*.toml`) and Steamodded
+   (`Mods/<mod>/manifest.json`) scan. Neither loader treats the extra level as
+   an error — they scan, find nothing, and Balatro starts completely unmodded.
+   The only symptom is the API health check timing out 30s later, which reads
+   as a networking problem. `launch.py` now detects a single-child wrapper
+   directory holding none of the mod markers and links through it
+   (`_resolve_mod_root`).
+
+**The common thread**: both failures were silent by construction — a wrong
+path that resolves to *something* (a different Balatro, an empty mod
+directory) produces no error at the point of the mistake, only a timeout
+several steps downstream that implicates the wrong layer. The fix in both
+cases was the same kind of move as Phase 2c: read what the log or the loader
+actually saw (`Initialization complete in 2ms`, no patches listed) rather than
+theorising from the exception's own stack trace, which pointed at the health
+check and not at mod loading.
+
+**Not fixed, deliberately left to the user**: the game install itself. A
+Steam-emulator-patched executable (`steam_emu.ini`, `steam_api64.rne`,
+`steam_appid.txt` beside `Balatro.exe`) is outside what this project sets up
+regardless of platform; the Windows path support above works with any
+legitimately-owned copy.
