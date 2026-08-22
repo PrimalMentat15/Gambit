@@ -13,7 +13,14 @@ cd train && pytest
 
 | Test | Covers |
 |------|--------|
-| `test_monitor.py` | Tail reader (incremental reads, partial lines, split UTF-8, restart detection), panel discovery, and an offscreen render of the real window to a PNG |
+| `test_monitor.py` | Tail reader (incremental reads, partial lines, split UTF-8, restart detection, **bounded reads + bulk-history filtering**), panel discovery, and an offscreen render of the real window to a PNG |
+
+The bounded-read test is load-bearing rather than incidental: an unbounded
+read of a mature `events.jsonl` costs gigabytes, and because the trainer's
+`pin_memory` buffers are page-locked, exhausting host RAM surfaces as a CUDA
+OOM that kills the run. It asserts batches stay capped, that bulk
+`episode_end` history is skipped, and that rare events survive in full. See
+`DECISIONS.md` Phase 7 Stage 0c.
 
 `test_monitor.py` needs the `balatro` conda env active (see the repo README). It renders without
 putting a window on screen and writes a screenshot per tab, so the dashboard can

@@ -24,9 +24,9 @@ policy:
   value_hidden: 256
 
 ppo:
-  total_timesteps: 2000000000
+  total_timesteps: 3500000000
   rollout_len: 128
-  minibatch_size: 32768
+  minibatch_size: 4096
   update_epochs: 4
   gamma: 0.999
   gae_lambda: 0.95

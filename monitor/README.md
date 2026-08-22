@@ -18,6 +18,34 @@ whole integration.
 trainer ──appends──> train/runs/<id>/events.jsonl <──tails── monitor
 ```
 
+Read-only is only half the isolation guarantee. The other half is **bounded**:
+the two processes share host RAM, and the trainer's `pin_memory` staging
+buffers are page-locked and cannot be swapped out. A monitor that allocates
+without limit can therefore kill a run it never writes to — see Phase 7
+Stage 0c in `DECISIONS.md` for the incident. Three rules keep it bounded:
+
+* **Reads are capped.** `TailReader` never holds more than `MAX_CHUNK` (4 MB)
+  of the file at once, however large the file is. `read()` sets `pending` when
+  more remains; callers drain in a loop rather than asking for everything.
+* **Bulk history is not replayed.** `episode_end` is ~99.95% of a mature run's
+  stream and its only consumer holds a bounded ring buffer, so replaying it
+  from the start of a multi-day run fills a ring that discards all but the last
+  few thousand. Only the last `BACKFILL_BYTES` (16 MB) of it is parsed. The
+  filter runs on raw bytes (`_peek_type`) **before** `json.loads`, because
+  parsing is the expensive part — ~955 B of Python objects per event.
+* **Rare events are never dropped.** Everything except the bulk types is
+  parsed for the whole file, so promotion history, milestones and per-iteration
+  curves are complete rather than truncated.
+
+Attaching to a 1.01 GB stream costs ~55 MB peak and ~19 s, against ~7.5 GB and
+a probable crash before this was in place.
+
+**"Follow latest" follows the latest *active* run**, not the newest directory.
+A short-lived debug or test run sorts newest by timestamp and would otherwise
+pull the view off a live multi-day run — and switching back pays a full
+re-scan. Tests must never write into the repo's real `train/runs/`; an autouse
+fixture in `train/tests/conftest.py` fails the suite if one does.
+
 It imports `balatro_train.telemetry` for the run-directory and event-schema
 definitions rather than duplicating them. That package is stdlib-only, so the
 monitor's own environment needs no trainer dependency; `monitor/__init__.py`

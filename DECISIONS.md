@@ -789,3 +789,339 @@ Steam-emulator-patched executable (`steam_emu.ini`, `steam_api64.rne`,
 `steam_appid.txt` beside `Balatro.exe`) is outside what this project sets up
 regardless of platform; the Windows path support above works with any
 legitimately-owned copy.
+
+---
+
+## Phase 7 — Decks, stakes, and the observation contract
+
+Goal: lift the stack off its single supported configuration (Red Deck / White
+Stake) onto the full 15 decks × 8 stakes grid, plus a separate endless
+objective. Stage 0 is the observation-contract half, done first and in
+isolation so the simulator work lands against a contract that is already
+frozen and already proven not to cost anything.
+
+---
+
+## Phase 7 Stage 0a — Migrating a contract without retraining
+
+**Decision:** widen the per-token feature vectors (`F_JOKER_FEAT` 11 → 15,
+`F_SHOP_FEAT` 13 → 16) by **appending** fields, and migrate existing
+checkpoints by filling the new input columns of `joker_proj` / `shop_proj`
+with **zeros**. Deck identity and stake go into `global[48:64)`, the block
+already reserved-and-asserted-zero, which they consume exactly — so
+`F_GLOBAL` stays 64 and the global MLP's weight shape never changes.
+
+**Why:** `Linear(x) = Wx + b`, so a zero column contributes `0 * x_new = 0`
+for any input. The migrated policy is therefore mathematically identical on
+every pre-P7 state, which means the ~2B steps already trained are not a
+prototype to be thrown away — they are the starting point. Measured: tokens,
+attention summary and value head all agree to **max delta exactly 0**.
+
+**The alternative rejected** was widening `F_GLOBAL` and re-running from
+scratch. It is simpler to implement (no migration script) and costs a
+multi-day run plus a re-climb of the whole ante-ladder curriculum. The
+reserved block existed precisely so this choice would not have to be made.
+
+**Consequence worth recording:** `global` now has **no headroom left**. The
+next global feature must widen `F_GLOBAL`, and that *will* change the global
+MLP's shape. `encoding.py` says so at the point of use.
+
+---
+
+## Phase 7 Stage 0b — The lossy layer was the encoder, not the simulator
+
+**Decision:** raise the observation slot caps from 10/6/3 to
+`HAND_MAX = 12`, `JOKER_SLOTS = 16`, `CONSUMABLE_SLOTS = 8`.
+
+**Why:** the simulator models Negative editions correctly — every Negative
+joker adds a capacity slot, and Perkeo mints Negative consumable copies — so
+a run can legitimately hold far more than 6 jokers and 3 consumables. The
+*encoder* then truncated: `.take(JOKER_SLOTS)` dropped the rest from the
+observation, and because the same constants size the **target masks**, those
+jokers were also unsellable and those consumables unusable.
+
+The jokers past the cap still *scored*. So the policy was being rewarded for
+builds it could neither see nor manage, and the strategies most affected —
+Perkeo / Blueprint / Cryptid negative-stacking — are among the strongest in
+the game. This was live on `m4_branch` for its entire ~2B steps.
+
+**Measured cost of the fix** (exact, from `OBS_SPEC`; buffer is
+`rollout_len 128 × num_envs 4096`):
+
+| caps (hand/joker/cons) | obs B/step | tokens | rollout buffer |
+|---|---|---|---|
+| 10 / 6 / 3 (pre-P7) | 3,351 | 27 | 1.64 GB |
+| 12 / 8 / 5 | 3,813 | 33 | 1.86 GB |
+| 12 / 12 / 6 | 4,098 | 38 | 2.00 GB |
+| **12 / 16 / 8** | **4,392** | **44** | **2.14 GB** |
+
+VRAM is the binding constraint on a 6 GB card, not FLOPs: +0.50 GB of rollout
+buffer. Every cap is one constant in `encoding.py` plus its `consts.rs`
+mirror, so falling back to 12/8 is a one-line change.
+
+**`slot_embed` needed a structured remap, not a zero-pad.** Slot embeddings
+are positional, so raising a cap shifts every later group — the joker group
+moves from token index 10 to 12. Rows are moved; genuinely new rows are seeded
+with the mean of their own group, so a new joker slot starts out looking like
+a typical joker slot rather than like nothing. `type_embed` is indexed by
+type, not slot, and needed nothing.
+
+**This step is mathematically identical on pre-P7 states too**, which was not
+obvious and is worth the evidence. Slots beyond the old caps are empty, hence
+attention-padding, hence never read — so the surviving tokens must match
+despite sitting at shifted indices:
+
+| dtype | max delta over all token groups + summary + value |
+|---|---|
+| float32 | `5.96e-07`  (1 ULP, 2⁻²⁴) |
+| float64 | `1.33e-15`  (1 ULP, 2⁻⁵⁰) |
+
+Not *bit*-identical, for a benign reason: attention now reduces over 44 keys
+instead of 27, and although the added keys carry exactly zero softmax weight,
+the matmul's tiling and summation order change. The float64 run is the proof —
+the residual **tracks machine epsilon** rather than staying fixed, collapsing
+by 4.5×10⁸. That is the signature of rounding, not of a structural difference.
+`test_slot_bump_difference_is_rounding_not_structure` pins it so it cannot
+quietly become a real divergence later.
+
+These figures come from a freshly-initialised policy; the residual scales with
+activation magnitude, and the trained 3.5B checkpoint sits two orders higher at
+`4.79e-05` while collapsing to `4.32e-14` in float64 exactly as above. The
+*collapse* is the invariant, not the number — see Stage 0e.
+
+**The general lesson:** the simulator was right and the tests were green; the
+loss happened at a boundary whose job is to *summarize*. A cap sized for the
+common case is invisible until the uncommon case is the one that wins.
+
+---
+
+## Phase 7 Stage 0c — A read-only monitor that crashed training
+
+**Decision:** cap `TailReader` reads at 4 MB, and skip replaying
+`episode_end` from deep history using a byte-level type peek that runs
+*before* `json.loads`.
+
+**Why:** attaching the monitor to a long run could OOM the GPU and kill
+training — from a process that contains no CUDA code at all.
+
+`TailReader.read()` read `size - self._offset` in a single call. On attach
+that is the entire file, and the raw chunk, the `split()` list and the parsed
+dicts are all live at once. Measured against the real `m4_branch` stream:
+
+| | |
+|---|---|
+| file | 1.01 GB / 5,960,921 lines |
+| parsed cost per event | 955 B |
+| **peak RAM to attach** | **~7.5 GB** |
+| machine / available with trainer running | 15.7 GB / **5.4 GB** |
+
+**The OOM mechanism, which is the part worth writing down:** the training
+config sets `pin_memory: true`, so the trainer holds **page-locked** host
+memory for host-to-device staging. Pinned pages cannot be swapped out. The
+monitor demands 7.5 GB against 5.4 GB available, physical RAM is exhausted,
+the pinned allocation fails, and CUDA reports it as an OOM. The monitor never
+touched the GPU — it starved the host buffers the GPU transfer depends on.
+
+**The work was also ~100% waste.** `episode_end` is **99.95%** of a mature
+run's file, and every consumer is a bounded `RingSeries(deque(maxlen=20000))`.
+Nine of the ten panels do not even subscribe to it — and `panels/base.py`
+filters by `EVENT_TYPES` *after* the full parse. Millions of events were
+constructed at 955 B each and immediately discarded.
+
+Result:
+
+| | before | after |
+|---|---|---|
+| peak RAM | ~7,500 MB | **55 MB** |
+| attach time | minutes, or a crash | **19.2 s** |
+| events parsed | 5,960,921 | 118,560 |
+
+Rare events survive in full — 2,189 rollouts, 573 promotion evals, 45
+milestones — so curriculum history is complete rather than truncated.
+
+**The alternative rejected** was seeking straight to the tail, which makes
+attach instant. It also silently loses the early promotion history the
+curriculum panel accumulates in an unbounded list. Scanning the whole file
+while parsing only the 0.05% that matters keeps that history and still fits
+in 55 MB; the 19 s is the price, and it is paid once per attach.
+
+Two supporting fixes, both root causes of the incident rather than the crash
+itself:
+
+- **"Follow latest" now means the latest *active* run**, not the newest
+  mtime. A short-lived debug run sorts newest and would yank the view off a
+  live multi-day run — and switching back paid the full re-read above.
+- **`test_perf.py` was writing into the repo's real `train/runs/`**, because
+  it loaded `configs/debug.yaml` without redirecting `log_dir`. That is what
+  created the newer-sorting directory in the first place. It now uses a
+  scratch dir, and an autouse fixture in `train/tests/conftest.py` **fails
+  the suite** if any test leaves a run directory behind.
+
+**The general lesson:** "read-only" bounds what a component can *corrupt*, not
+what it can *consume*. The monitor's isolation guarantee was written in terms
+of the event stream — it never writes, so it cannot disturb a run — and that
+reasoning is correct and irrelevant, because the shared resource that actually
+coupled the two processes was host RAM. The guarantee needed a second half:
+read-only *and* bounded. This is the same shape as Phase 2b's lesson about an
+instrumentation design being correct only relative to a throughput; here it
+was correct only relative to a file size.
+
+---
+
+## Phase 7 Stage 0d — One contract in two files, now actually enforced
+
+**Decision:** `test_rust_mirror_matches_encoding` parses `sim/py/src/consts.rs`
+and asserts every shared constant and both frozen enums (`Deck`, `Stake`) match
+`balatro_train/encoding.py`.
+
+**Why:** the invariant was already stated — `consts.rs` line 1 says the Python
+file is the source of truth and this one must match it exactly — but nothing
+checked. It was a comment, and comments do not fail builds.
+
+It got tested for real during Stage 0. With the P7 contract landed but the
+PyO3 binding not yet rebuilt (a live run held the `.pyd` locked on Windows),
+the Python constants were temporarily hand-edited back to the pre-P7 values so
+training could be restarted against the old binary. Reasonable, and marked
+`TEMPORARY` at every site. Two things went wrong anyway:
+
+1. **The revert was partial.** The feature *widths* went back
+   (`F_JOKER_FEAT` 15 → 11, `F_SHOP_FEAT` 16 → 13) but the *offsets* into them
+   did not, leaving `JOKER_ETERNAL_OFF = 11` addressing index 11 of an 11-wide
+   vector, and `SHOP_ETERNAL_OFF = 13` of a 13-wide one. Latent only because
+   the sticker encoders are Stage 2 work and nothing writes those slots yet —
+   a loaded gun for whoever writes them.
+2. **The two halves of the contract silently disagreed.** `consts.rs` still
+   held the P7 values. Nothing anywhere reported this; the only mechanism that
+   would have was the runtime boundary validator in `sim_env.py`, and it cannot
+   fire until the binding is rebuilt, which was exactly the blocked step.
+
+**The trade that was actually made** is the interesting part: reverting turned
+17 loud, precisely-worded failures (`obs[joker_feats]: shape (4,6,11) !=
+(4,6,15)`) into 6 confusing ones plus a source-level divergence that no test
+covered. The loud failures were *correct* — they were the system reporting
+"your binding is stale" in the clearest terms available.
+
+**The general lesson:** a boundary validator that runs at boundary-crossing
+time cannot protect you while the boundary is what you are unable to cross.
+The check has to live somewhere that is always reachable — parsing the other
+side's source text needs no toolchain, no rebuild, and no running process, so
+it works precisely in the degraded state where the real check is unavailable.
+Verified the guard fires rather than passing vacuously: perturbing one Rust
+constant produces `consts.rs has drifted from encoding.py: JOKER_SLOTS:
+rust=6 != encoding.py=16`.
+
+---
+
+## Phase 7 Stage 0e — The half of the migration that was not in the state dict
+
+**Decision:** `migrate_contract_p7.py` migrates `ck["optimizer"]` alongside
+`ck["policy"]`, and `--verify` gates on the float32-vs-float64 epsilon
+collapse rather than on an absolute float32 tolerance.
+
+**Why the optimizer:** Stage 0a and 0b established that the *weights* can be
+widened losslessly, and the verification proved it on tokens, summary and
+value. All of that was true and none of it was sufficient. Adam carries
+`exp_avg` and `exp_avg_sq` per parameter, both shaped like the parameter, and
+resuming loads them straight back:
+
+    RuntimeError: params, grads, exp_avgs, and exp_avg_sqs
+                  must have same dtype, device, and layout
+
+The crash is the lucky case. `slot_embed` is the unlucky one: its moments have
+the same *shape* under any cap that sums to 44, so a stale tensor of the right
+size would have loaded cleanly with every row attached to the wrong slot —
+joker momentum applied to hand positions, silently, for the rest of the run.
+Optimizer state is keyed by parameter POSITION, not by name, so nothing in
+that path can notice. The moments therefore get the same treatment as the
+weights: appended columns zero-filled, `slot_embed` rows *remapped*.
+
+New rows and columns get **zero** moments, not their group's mean. The weights
+seed a new slot with the group mean so it starts out looking like a typical
+slot; a moment is a record of gradients that a never-trained parameter does
+not have, and averaging its neighbours' would invent one. Adam's first update
+from `m = v = 0` is exactly zero, so nothing jumps.
+
+**Why the tolerance:** `verify()` asserted `max |delta| < 1e-5` in float32.
+That passed on a freshly-initialised policy — Stage 0b's table records
+`5.96e-07` — and failed on the real 3.5B checkpoint at `4.79e-05`, with
+nothing structural changed. The residual scales with the activation magnitudes
+of the weights being migrated, so any absolute threshold is really a threshold
+on how *trained* the checkpoint is, which is exactly backwards for a gate
+meant to protect trained checkpoints. The dtype comparison Stage 0b used as
+*evidence* is the correct *gate*: float32 `4.79e-05` → float64 `4.32e-14`, a
+collapse of ~1e9 that tracks machine epsilon. Extra keys that genuinely
+influenced the result would persist at float64.
+
+**How it was found:** by running the migration end to end — migrate, load,
+`collect()`, `update()` — instead of stopping at "the script printed
+`wrote`". Both defects live strictly after the last thing the script checks.
+
+**The general lesson**, and it rhymes with the `auto_minibatch` entry above: a
+migration is defined by what the *next process* reads, not by what the
+migration script writes. A checkpoint is not a model, it is everything needed
+to continue — weights, optimizer moments, normalizer statistics, step
+counters. Verifying the model and calling the checkpoint migrated is checking
+the half that was easy to think about. The test that would have caught it is
+not another assertion about `joker_proj`; it is one `optimizer.step()`.
+
+---
+
+## Phase 7 Stage 1 — Decks and stakes in the core
+
+**Decision:** `Run::new(seed)` stays, and becomes a shim for
+`Run::with_config(seed, RunConfig::default())`.
+
+**Why:** there are 106 `Run::new` call sites and 100 of them are oracle-vector
+tests. Changing the signature would have churned every one of them for no gain,
+and worse, it would have made "did this refactor move a frozen vector?" hard to
+answer — the diff would be enormous and mostly noise. With the shim the answer
+is visible: the vectors compile unchanged, so if they still pass, Red/White is
+still Red/White. `config.rs` carries an executable restatement of the old
+hardcoded constants (`red_white_reproduces_the_previous_hardcoded_constants`)
+so the claim does not rest on the vectors alone.
+
+**Deck construction consumes RNG for exactly one deck.** Erratic draws 52 times
+on the `'erratic'` key; every other deck is a pure function. Since Balatro keys
+each pseudorandom stream separately (`G.GAME.pseudorandom[key]`), order *across*
+keys is unobservable — so no deck can shift a stream that a frozen vector
+depends on. `only_erratic_consumes_rng` asserts this for all 15 rather than
+leaving it as a comment.
+
+**Ordering that is observable, and was nearly wrong:** `Back:apply_to_run` runs
+at game.lua:2043, and the run-start `'Voucher1'` roll at :2178. The Zodiac Deck
+pre-redeems three vouchers, and redemption marks them used — which removes them
+from the pool that roll draws from. Applying the deck's vouchers *after* the
+roll would let the shop offer a voucher the deck already owns. Pinned by
+`pre_redeemed_vouchers_leave_the_shop_pool`.
+
+**A fidelity bug the deck system exposed.** The Needle's hand reduction was
+`STARTING_HANDS - 1`, a constant. blind.lua:184 reads
+`G.GAME.round_resets.hands - 1`. On Red/White those are the same number, so the
+bug was invisible and every vector passed. On the Blue Deck (+1 hand) or the
+Black Deck (−1 hand) they diverge. Now reads `self.round_resets_hands - 1`.
+
+This is the recurring shape of this phase: a constant is indistinguishable from
+a correct expression until something makes the inputs vary. The deck system did
+not introduce the bug, it made it *reachable* — which is an argument for landing
+the configuration axis before the content that depends on it, not after.
+
+**Plasma is two independent mechanics, not one.** `ante_scaling = 2` multiplies
+the blind requirement (blind.lua:107) and the `final_scoring_step` hook averages
+chips and mult (back.lua:125-171). They are separate fields —
+`StartingParams::ante_scaling` and `Modifiers::plasma_balance` — because the
+stake's `scaling` curve is a *third* independent input: Plasma on Gold Stake
+gets curve 3 and the ×2. `ante_scaling_is_independent_of_the_stake_curve` pins
+the three-way combination.
+
+The balance step floors both halves independently (`math.floor(tot/2)` twice),
+so an odd total silently loses one chip and one mult. Ported verbatim.
+
+**A test that was wrong before the code was.** The three blind curves share an
+identical tail formula past ante 8, so it is tempting to assert they stay
+exactly proportional. They do not: each is truncated to two significant figures
+*independently* (`amount - amount % 10^floor(log10(amount)-1)`), so at ante 9
+the ratio is 230000/110000 = 2.0909, not 2. The truncation is the real
+invariant — and even that can only be asserted below ~2^53, because past there
+an f64 is no longer an exact integer and `%` against a power of ten returns
+noise. The implementation is faithful up there regardless: it uses `lua_fmod`
+exactly as Lua does, and Lua numbers are the same f64.

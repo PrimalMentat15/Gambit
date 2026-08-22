@@ -1,0 +1,148 @@
+# M6: finish Red Deck / White Stake, and measure what the P7 slot fix bought.
+#
+# Resumes m4_branch's migrated checkpoint (ckpt_3500408832.p7.pt, 3.50B steps,
+# ~53% ante-8 win rate). That run did NOT plateau -- win rate was still
+# climbing ~3.7 points per 250M steps when it stopped, and approx_kl had
+# collapsed to 5.4e-05 because the lr ramp had run past total_timesteps and
+# floored at zero. It ran out of learning rate, not out of headroom.
+#
+# Two jobs, one run:
+#   1. Chase the 70% ante-8 target on the one configuration the whole grid
+#      transfers from.
+#   2. Measure the P7 slot-cap fix in isolation. The 53% was earned by a policy
+#      that could not see or sell jokers past slot 6, nor use consumables past
+#      slot 3 -- so it never trained a step with the Perkeo / Blueprint /
+#      Cryptid negative-stacking builds available. Its value is unknown, and
+#      knowing it before committing days to the deck mixture de-risks all of P7.
+#
+# Deliberately still Red/White. Adding the other 14 decks divides the data ~15
+# ways; it would make this number improve slower, not faster.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  num_envs: 4096
+  seed: 0
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  # 1.5B more steps on top of the resumed 3.50B. At ~7,300 steps/s that is
+  # roughly 2.5 days.
+  total_timesteps: 5000000000
+  rollout_len: 128
+
+  # Hand-tuned, NOT probed. auto_minibatch optimises for whether an update
+  # *fits* in VRAM, not whether it runs fast; on this 6GB card it picks a value
+  # that costs an 8x throughput collapse (README, "Tuning throughput").
+  # m5.yaml's 32768 is sized for the 2x5090 box and must not be copied here.
+  minibatch_size: 4096
+
+  # 2, not m4's 4. The m5e2 A/B picked 2, and it is the better fit for a
+  # late-stage policy: four passes over the same batch drift further off-policy
+  # each time, and m4 was running approx_kl ~1.2e-02 for most of its life.
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+
+  # The important number. lr_at() computes (1 - step/total) * lr, so at the
+  # 3.50B resume point this is (1 - 3.5/5.0) * 1e-4 = 3.0e-05 -- essentially
+  # continuous with the 2.1e-05 the policy was last training at, then decaying
+  # smoothly to zero at 5.0B.
+  #
+  # Restarting at m4's 3.0e-4 would give 9.0e-05 here, a ~4x jump. That
+  # experiment has already been run by accident: extending the budget at ~2.0B
+  # re-jumped lr the same way, and the win rate fell 0.411 -> 0.375 and took
+  # ~500M steps to recover. Not worth repeating.
+  lr: 1.0e-4
+  anneal_lr: true
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: true
+  buffer_device: auto
+  pin_memory: true
+  auto_minibatch: false
+  fused_adam: true
+
+curriculum:
+  # Already on the top rung, so this is a periodic held-out measurement, not a
+  # ladder -- a one-entry ladder says so, and makes promotion structurally
+  # impossible rather than merely unreached.
+  enabled: true
+  start_ante: 8
+  ladder: [8]
+  promote_winrate: 0.7
+  # 25M, not m4's 2M. At 524,288 steps per iteration a 2M cadence is an eval
+  # every ~4 iterations, which is throughput spent on a promotion that can
+  # never fire. 25M is ~48 iterations: still a dense curve, far cheaper.
+  eval_every_steps: 25000000
+  # 2000, not 200. This run's whole purpose is detecting a change of a few
+  # points, and at a true rate near 0.55 a 200-episode eval has a 95% interval
+  # of +/-6.9pp -- wide enough to hide the entire effect. 2000 narrows that to
+  # +/-2.2pp. (Training seeds are NOT the lever here: every env draws a fresh
+  # seed per episode from its SplitMix64 stream, so training already sees
+  # unlimited, never-repeated seeds. Only the eval sample is finite.)
+  promotion_eval_episodes: 2000
+  # 512, not 100: 2000 episodes across 100 slots is 20 sequential waves. More
+  # slots make the bigger sample nearly free in wall-clock.
+  eval_num_envs: 512
+  eval_seed_base: 1000000
+  milestone_every_steps: 50000000
+  milestone_episodes: 2000
+
+snapshots:
+  # Off, and the stale runs/pools/pool_v1.bin is NOT regenerated. The fraction
+  # anneal already reaches 0.0 at 900M and this run starts at 3,500M, so the
+  # pool would contribute exactly nothing. (Its decode error under the P7 sim
+  # is the format check working: the file predates RunConfig, so bincode reads
+  # the byte where the deck field now lives and finds 52 where it wants 0..14.)
+  # A fresh pool belongs with the deck mixture, where it needs per-deck
+  # coverage anyway.
+  enabled: false
+
+shaping:
+  # A CONSTANT 0.1, stated as one. m4 carried an anneal from 1.0 whose
+  # start/end (500M/900M) are 2.6B steps behind this run's 3,500M resume
+  # point, so it read like a live schedule while behaving like a constant.
+  # `end_step <= start_step` disables the anneal (ppo.shaping_beta_at), so
+  # this is the same 0.1 the policy has trained under since 900M -- expressed
+  # honestly rather than inherited.
+  #
+  # NOT lowered to 0 in this run, deliberately. Unlike the lr (which was
+  # literally zero and therefore a dead run), 0.1 is the regime in which the
+  # win rate went 0.204 -> 0.540. Changing it here would be a third
+  # simultaneous change alongside update_epochs 4->2 and the slot-cap fix,
+  # and would make this run's measurement unattributable. Beta deserves its
+  # own A/B from a common checkpoint, the way update_epochs got one.
+  beta: 0.1
+  anneal:
+    start_step: 0
+    end_step: 0
+    final_beta: 0.1
+
+log:
+  run_name: m6
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

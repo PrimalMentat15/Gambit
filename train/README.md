@@ -45,6 +45,18 @@ python scripts/sim_soak.py --bench              # steps/s at N=256/1024/2048
 python scripts/sim_bot_eval.py --seeds 1000     # heuristic-bot baseline
 ```
 
+Migrating a pre-P7 checkpoint onto the current observation contract:
+
+```sh
+python scripts/migrate_contract_p7.py runs/<run>/ckpt_<step>.pt --verify
+```
+
+The migration is behaviour-preserving by construction — appended features get
+zero weight columns, and slots beyond the old caps are attention-padding — so
+`--verify` reports agreement to ~1 ULP (exactly 0 for the feature widening
+alone). It is idempotent and refuses checkpoints of unexpected shape rather
+than guessing. Details and the measurements: `DECISIONS.md` Phase 7 Stage 0.
+
 ### Binding decisions (P6, summarized; full docs in `sim/py/src/*.rs`)
 
 * **Seeds**: env *i* owns a SplitMix64 stream seeded with `seeds[i]`; every
@@ -70,8 +82,16 @@ python scripts/sim_bot_eval.py --seeds 1000     # heuristic-bot baseline
   usability) the action is a **no-op**, never an error.
 * **PICK_PACK** of a targeted consumable auto-picks targets the same way
   (the action space has no card head for packs).
-* **Hand clamp**: hands can exceed 10 (Turtle Bean, The Serpent); the obs
-  shows the first 10 in display order and only those are selectable.
+* **Entity slot caps** (P7): `HAND_MAX = 12`, `JOKER_SLOTS = 16`,
+  `CONSUMABLE_SLOTS = 8`. These size the **target masks** as well as the
+  observation, so anything past a cap is not merely unobserved — it is
+  unplayable / unsellable / unusable. They were 10/6/3, which silently
+  truncated Negative-edition joker stacks (Perkeo / Blueprint / Cryptid): the
+  sim scored those jokers while the policy could neither see nor sell them.
+  Contents past a cap are still shown first-N in display order; a deep endless
+  stack can exceed even 16/8 (known limitation). See `DECISIONS.md` Phase 7
+  Stage 0b for the measured cost — +0.50 GB of rollout buffer at
+  `128 × 4096`.
 * **Not expressible in the v1 action space** (documented frictions):
   boss reroll (Director's Cut/Retcon voucher action), buy-and-use from the
   shop, joker reordering (MOVE_JOKER reserved; inventory order is kept
@@ -211,7 +231,7 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
 
 | file | what |
 |---|---|
-| `balatro_train/encoding.py` | **Single source of truth**: obs/mask/action array specs, enums, feature index layouts. The Rust binding must match it exactly. |
+| `balatro_train/encoding.py` | **Single source of truth**: obs/mask/action array specs, enums, feature index layouts. The Rust mirror (`sim/py/src/consts.rs`) must match it exactly — enforced by `tests/test_contract_migration.py::test_rust_mirror_matches_encoding`, which parses the `.rs` and needs no compiled binding, so it still catches drift while the installed module is stale. |
 | `balatro_train/env_api.py`  | `VecEnv` protocol + full contract doc (auto-reset, mask semantics, reward shaping scheme, β anneal hook) + env registry. |
 | `balatro_train/mock_env.py` | Pure-numpy fake env with correct mask semantics; strict action validator; `shaped` and `bandit` reward modes. |
 | `balatro_train/policy.py`   | Entity-token transformer (3×128 pre-LN), pointer heads, autoregressive card head w/ GRU, value head; exact −inf masking; one shared code path for sampling and PPO recompute. |
@@ -224,6 +244,7 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
 | `balatro_train/tools/`     | `killrun` (graceful stop / force kill from the terminal), process helpers, event-stream reader. |
 | `configs/`                  | `debug.yaml` (tiny/CPU), `default.yaml` (plan hypers), `m1.yaml` (first real run), `m3.yaml` (m1 + snapshot mixing + resume), `m3_fast.yaml` (m3 + perf toggles; see "Throughput"). |
 | `scripts/bench_ppo.py`      | Wall-clock phase breakdown + torch.profiler bench of collect/update (supports `--set path=value` config overrides). |
+| `scripts/migrate_contract_p7.py` | One-shot checkpoint migration to the P7 observation contract: zero-pads the widened `joker_proj`/`shop_proj` inputs and remaps `slot_embed` for the raised slot caps. `--verify` asserts the migrated policy encodes pre-P7 states identically. Idempotent. |
 
 ## Event stream and stopping a run
 

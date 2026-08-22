@@ -20,8 +20,8 @@ and run-control layer.
   the *real* game for evaluation and for the cross-validation harness (`balatro-crossval`) that
   diffs sim vs. game state after every action of seeded runs.
 - **`monitor/`** — a live PyQt dashboard plus a phone-checkable SSE web view, both reading the
-  run's NDJSON event stream. Read-only: start, stop or restart it mid-run without affecting
-  training.
+  run's NDJSON event stream. Read-only *and* bounded-memory: start, stop or restart it mid-run
+  without affecting training.
 
 ## Environment
 
@@ -155,9 +155,15 @@ Panels sit in a dock area and can be dragged, resized, stacked or torn off; use 
 to keep the arrangement. Adding a chart means adding one file to `monitor/panels/` — the registry
 discovers it and the shell docks it, with no other code to touch.
 
-Three properties keep it from competing with training for resources: one shared timer repaints
-everything at 10 Hz rather than 60, hidden panels skip their repaint entirely, and every series is
-a bounded ring buffer decimated before drawing.
+Four properties keep it from competing with training for resources: one shared timer repaints
+everything at 10 Hz rather than 60, hidden panels skip their repaint entirely, every series is
+a bounded ring buffer decimated before drawing, and reads off the event stream are capped so
+attaching to a multi-gigabyte run costs tens of megabytes rather than gigabytes.
+
+That last one is not decoration. Being read-only bounds what the monitor can *corrupt*, not what
+it can *consume*, and the trainer's page-locked `pin_memory` buffers cannot be swapped out — so an
+unbounded read really could OOM the GPU from a process with no CUDA in it. `DECISIONS.md`,
+Phase 7 Stage 0c.
 
 Colours come from a palette validated for colour-vision deficiency (worst adjacent pair ΔE 9.4,
 all slots ≥3:1 against the surface).
