@@ -45,7 +45,12 @@ class PPOConfig:
     vf_coef: float = 0.5
     ent_coef: float = 0.01
     lr: float = 3.0e-4
-    anneal_lr: bool = True        # linear decay of lr to 0 over total_timesteps
+    anneal_lr: bool = True        # linear decay of lr to 0
+    # Denominator of the lr decay ramp. None = total_timesteps (lr hits 0
+    # exactly at the end of the budget). Set it to decouple the lr schedule
+    # from the stop condition: extending total_timesteps mid-run otherwise
+    # rescales the ramp and jumps lr at the resume point.
+    lr_anneal_total: int | None = None
     max_grad_norm: float = 0.5
     norm_adv: bool = True         # per-batch advantage normalization
     norm_ret: bool = True         # running return normalization (reward scaling)

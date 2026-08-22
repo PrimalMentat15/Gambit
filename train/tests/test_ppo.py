@@ -71,3 +71,31 @@ def test_checkpoint_roundtrip(tmp_path):
     assert trainer2.global_step == trainer.global_step
     if trainer.ret_norm:
         assert trainer2.ret_norm.rms.state_dict() == trainer.ret_norm.rms.state_dict()
+
+
+def test_lr_anneal_total_decouples_the_ramp_from_the_budget(tmp_path):
+    """``total_timesteps`` is the stop condition AND, by default, the lr ramp's
+    denominator. Extending a budget mid-run therefore rescales lr — the jump
+    that a resume silently inherits. ``lr_anneal_total`` pins the ramp."""
+    cfg = _cfg(tmp_path)
+    cfg.ppo.total_timesteps = 2_000_000_000
+    cfg.ppo.lr = 3e-4
+    trainer = PPOTrainer(cfg)
+
+    # Default: the ramp follows the budget, so lr is ~0 at the end of it.
+    assert trainer.lr_at(0) == pytest.approx(3e-4)
+    assert trainer.lr_at(2_000_000_000) == pytest.approx(0.0)
+    assert trainer.lr_at(3_000_000_000) == 0.0  # clamped, never negative
+
+    # Extending the budget rescales the ramp: lr at 2B jumps off the floor.
+    cfg.ppo.total_timesteps = 3_000_000_000
+    assert trainer.lr_at(2_000_000_000) == pytest.approx(1e-4)
+
+    # Pinning the ramp keeps it continuous across that same edit.
+    cfg.ppo.lr_anneal_total = 2_000_000_000
+    assert trainer.lr_at(2_000_000_000) == pytest.approx(0.0)
+    assert trainer.lr_at(1_000_000_000) == pytest.approx(1.5e-4)
+
+    # anneal_lr off is a flat lr regardless of either knob.
+    cfg.ppo.anneal_lr = False
+    assert trainer.lr_at(2_000_000_000) == pytest.approx(3e-4)

@@ -431,11 +431,25 @@ class PPOTrainer:
 
     # ----------------------------------------------------------------- update
 
+    def lr_at(self, step: int) -> float:
+        """The annealed learning rate for a global step.
+
+        The ramp's denominator is ``lr_anneal_total`` when set, else
+        ``total_timesteps``.  Keeping them separable matters on resume:
+        ``total_timesteps`` is also the stop condition, so extending a budget
+        mid-run rescales the ramp and jumps lr at the resume point unless the
+        schedule is pinned."""
+        cfg = self.cfg.ppo
+        if not cfg.anneal_lr:
+            return cfg.lr
+        total = cfg.lr_anneal_total or cfg.total_timesteps
+        frac = 1.0 - step / max(total, 1)
+        return max(frac, 0.0) * cfg.lr
+
     def update(self) -> dict:
         cfg = self.cfg.ppo
+        lr = self.lr_at(self.global_step)
         if cfg.anneal_lr:
-            frac = 1.0 - self.global_step / max(cfg.total_timesteps, 1)
-            lr = max(frac, 0.0) * cfg.lr
             for group in self.optimizer.param_groups:
                 group["lr"] = lr
 
@@ -484,9 +498,9 @@ class PPOTrainer:
                     stats_t["clipfrac"].append(
                         ((ratio - 1.0).abs() > cfg.clip_coef).float().mean()
                     )
-        return {
-            k: float(np.mean([t.item() for t in v])) for k, v in stats_t.items()
-        }
+        out = {k: float(np.mean([t.item() for t in v])) for k, v in stats_t.items()}
+        out["lr"] = lr
+        return out
 
     # ------------------------------------------------------------------ train
 
@@ -598,7 +612,8 @@ class PPOTrainer:
                       f"kl {stats['approx_kl']:7.5f}"]
             print("  ".join(parts), flush=True)
         if self.writer:
-            for key in ("loss", "pg_loss", "v_loss", "entropy", "approx_kl", "clipfrac"):
+            for key in ("loss", "pg_loss", "v_loss", "entropy", "approx_kl",
+                        "clipfrac", "lr"):
                 self.writer.add_scalar(f"losses/{key}", stats[key], self.global_step)
             for key in ("ep_return_mean", "ep_length_mean", "ep_ante_mean",
                         "ep_win_rate", "sps", "sps_inst"):
@@ -794,6 +809,27 @@ class PPOTrainer:
         # Snapshot fraction follows the restored global step's schedule.
         self._apply_snapshot_fraction()
         self._apply_shaping_beta()
+        # The lr ramp is the one schedule that is not a pure function of
+        # global_step: extending total_timesteps to buy more training also
+        # rescales it, so a resume can silently jump lr by orders of
+        # magnitude. Report both sides of the discontinuity.
+        if self.cfg.ppo.anneal_lr:
+            saved = ckpt.get("config", {}).get("ppo", {})
+            prev_total = saved.get("lr_anneal_total") or saved.get("total_timesteps")
+            cur = self.cfg.ppo
+            total = cur.lr_anneal_total or cur.total_timesteps
+            lr = self.lr_at(self.global_step)
+            print(f"[lr] resume at {lr:.3e} (anneal over {total:,} steps)", flush=True)
+            if prev_total and prev_total != total:
+                prev_lr = max(1.0 - self.global_step / max(prev_total, 1), 0.0) * (
+                    saved.get("lr", cur.lr)
+                )
+                print(
+                    f"[lr] WARNING: the checkpoint annealed over {prev_total:,} "
+                    f"steps ({prev_lr:.3e} here) — the ramp was rescaled. Pin "
+                    f"ppo.lr_anneal_total to keep it continuous.",
+                    flush=True,
+                )
 
 
 def main() -> None:
