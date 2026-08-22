@@ -41,6 +41,7 @@ impl World {
             most_played: self.most_played,
             mods: EvalMods::default(),
             prob_normal: 1.0,
+            plasma_balance: false,
         };
         let mut play = play.to_vec();
         let mut held = held.to_vec();

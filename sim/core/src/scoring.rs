@@ -407,6 +407,9 @@ pub struct ScoreContext<'a> {
     /// and the Glass break roll read it (card.lua:988/1076,
     /// state_events.lua:961).
     pub prob_normal: f64,
+    /// Plasma Deck: average chips and mult in the final scoring step
+    /// (back.lua:125-171). False for every other deck.
+    pub plasma_balance: bool,
 }
 
 /// Result of scoring one played hand.
@@ -733,8 +736,16 @@ pub fn evaluate_play(
             ctx.rng,
         );
 
-        // Deck-back final_scoring_step (:946-948): Plasma Deck balances
-        // chips/mult here; the Red Deck's trigger_effect is a no-op.
+        // Deck-back final_scoring_step (state_events.lua:946-948): the Plasma
+        // Deck averages chips and mult; every other deck's trigger_effect is a
+        // no-op. Runs after ALL joker scoring and before the destruction pass.
+        if ctx.plasma_balance {
+            // back.lua:127-128 — both halves are floored INDEPENDENTLY, so an
+            // odd total silently loses one chip and one mult. Verbatim.
+            let tot = hand_chips + mult;
+            hand_chips = (tot / 2.0).floor();
+            mult = (tot / 2.0).floor();
+        }
 
         // Destruction pass (:950-973): joker destroying_card hook first, then
         // the Glass break roll — `pseudorandom('glass') <

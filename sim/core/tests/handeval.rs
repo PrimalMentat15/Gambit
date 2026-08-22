@@ -23,6 +23,7 @@ fn score_play(
         most_played: HandType::HighCard,
         mods: *mods,
         prob_normal: 1.0,
+        plasma_balance: false,
     };
     let mut play = play.to_vec();
     let mut held = Vec::new();

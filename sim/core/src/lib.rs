@@ -1,5 +1,6 @@
 pub mod blinds;
 pub mod cards;
+pub mod config;
 pub mod consumables;
 pub mod deck;
 pub mod handeval;

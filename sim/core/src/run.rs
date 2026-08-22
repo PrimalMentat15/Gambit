@@ -36,8 +36,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::blinds::{boss_by_key, get_new_boss, ActiveBlind, BlindProto, BL_BIG, BL_SMALL};
 use crate::cards::{Card, Enhancement, HandType, Seal, Suit};
+use crate::config::{Deck, Modifiers, RunConfig, Stake, StartingParams};
 use crate::consumables::planet_for_hand;
-use crate::deck::{pseudoshuffle, red_deck};
+use crate::deck::{build_deck, pseudoshuffle};
 use crate::handeval::EvalMods;
 use crate::items::{element_index, ConsumableSet, JokerId};
 use crate::jokers::{resolve_effective, EngineHooks, JokerEnv, JokerOutbox, OutEvent};
@@ -47,19 +48,10 @@ use crate::shop::{
     JokerArea, OwnedConsumable, OwnedJoker, PackState, RunTag, ShopState, TagContext,
 };
 
-/// `get_starting_params()` (misc_functions.lua:1868), Red Deck / White Stake.
-const STARTING_DOLLARS: i64 = 4;
-const HAND_SIZE: i64 = 8;
-const STARTING_HANDS: i64 = 4;
-/// base 3 (misc_functions.lua:2026) + 1 from the Red Deck back:
-/// `Back:apply_to_run` adds `config.discards` (= 1 for b_red, game.lua:643)
-/// to starting_params.discards (back.lua:264-265). Found by P5 live
-/// cross-validation — every Red Deck round has 4 discards.
-const STARTING_DISCARDS: i64 = 4;
-pub(crate) const STARTING_REROLL_COST: i64 = 5;
-pub(crate) const JOKER_SLOTS: usize = 5;
-/// game.lua:1884 / :1909-1910.
-const WIN_ANTE: i64 = 8;
+// Starting dollars / hand size / hands / discards / reroll cost / joker slots
+// and the win ante all live in `config::StartingParams` and `config::RunConfig`
+// now; they are per-deck and per-stake, not constants. `get_starting_params()`
+// (misc_functions.lua:1868-1881) is `StartingParams::default()`.
 /// `G.hand.config.highlighted_limit` — at most 5 cards played/discarded.
 const HIGHLIGHT_LIMIT: usize = 5;
 
@@ -187,6 +179,16 @@ impl std::error::Error for RunError {}
 pub struct Run {
     pub(crate) rng: RngState,
     pub(crate) state: State,
+
+    /// The deck/stake/win-ante this run is played on. Fixed for the run's
+    /// lifetime; `params` and `modifiers` are its resolved consequences.
+    pub(crate) config: RunConfig,
+    /// `G.GAME.starting_params` after the stake cascade and `apply_to_run`.
+    /// Kept around because several effects re-read the *starting* value rather
+    /// than the current one (e.g. round resets).
+    pub(crate) params: StartingParams,
+    /// `G.GAME.modifiers` — economy and shop rules set by deck and stake.
+    pub(crate) modifiers: Modifiers,
 
     pub(crate) deck: Vec<Card>,
     pub(crate) hand: Vec<Card>,
@@ -362,18 +364,35 @@ pub struct Run {
 
 impl Run {
     /// Mirrors `Game:start_run` for a seeded Red Deck / White Stake run.
+    ///
+    /// Kept as the zero-config entry point because the overwhelming majority
+    /// of callers (every oracle-vector test) want exactly this.
     pub fn new(seed: &str) -> Self {
+        Run::with_config(seed, RunConfig::default())
+    }
+
+    /// Mirrors `Game:start_run` for an arbitrary deck and stake.
+    ///
+    /// `RunConfig::resolve` applies the stake cascade before the deck, matching
+    /// game.lua:2031-2043.
+    pub fn with_config(seed: &str, config: RunConfig) -> Self {
+        let (params, modifiers) = config.resolve();
         let mut rng = RngState::new(seed);
-        let mut deck = red_deck();
+        // Erratic draws on the 'erratic' key here; every other deck leaves the
+        // RNG untouched, so the boss roll below is unmoved for all of them.
+        let mut deck = build_deck(config.deck, &mut rng);
 
         // game.lua:2177 — the ante-1 boss is rolled at run start, before the
         // first shuffle.
         let mut bosses_used: HashMap<&'static str, i64> = HashMap::new();
-        let boss_choice = get_new_boss(&mut rng, &mut bosses_used, 1, WIN_ANTE);
+        let boss_choice = get_new_boss(&mut rng, &mut bosses_used, 1, config.win_ante);
 
         let mut run = Run {
             rng,
             state: State::BlindSelect,
+            config,
+            params,
+            modifiers,
             deck: Vec::new(),
             hand: Vec::new(),
             discard_pile: Vec::new(),
@@ -382,20 +401,20 @@ impl Run {
             ante: 1,
             blind_ante: 1,
             round: 0,
-            dollars: STARTING_DOLLARS,
+            dollars: params.dollars,
             bankrupt_at: 0,
             chips: 0.0,
             // game.lua:2492-2493 — start_run pre-fills current_round's
             // hands/discards from round_resets before the first blind.
-            hands_left: STARTING_HANDS,
-            discards_left: STARTING_DISCARDS,
+            hands_left: params.hands,
+            discards_left: params.discards,
             unused_discards: 0,
-            hand_size: HAND_SIZE,
-            round_resets_hands: STARTING_HANDS,
-            round_resets_discards: STARTING_DISCARDS,
+            hand_size: params.hand_size,
+            round_resets_hands: params.hands,
+            round_resets_discards: params.discards,
             temp_handsize: None,
-            base_reroll_cost: STARTING_REROLL_COST,
-            reroll_cost: STARTING_REROLL_COST,
+            base_reroll_cost: params.reroll_cost,
+            reroll_cost: params.reroll_cost,
             reroll_cost_increase: 0,
             temp_reroll_cost: None,
             free_rerolls: 0,
@@ -408,9 +427,9 @@ impl Run {
             tarot_rate: 4.0,
             planet_rate: 4.0,
             playing_card_rate: 0.0,
-            spectral_rate: 0.0,
-            joker_slots: JOKER_SLOTS,
-            consumable_slots: 2,
+            spectral_rate: modifiers.spectral_rate,
+            joker_slots: params.joker_slots,
+            consumable_slots: params.consumable_slots,
             shop_joker_max: 2, // G.GAME.shop.joker_max (game.lua:1985)
             hands_played_round: 0,
             discards_used_round: 0,
@@ -462,6 +481,26 @@ impl Run {
             last_play: None,
             won: false,
         };
+
+        // back.lua:176-180 / :232-238 — the deck's vouchers are pre-redeemed:
+        // marked used (so they also leave the shop's pool) and applied.
+        //
+        // Order matters and is observable. `apply_to_run` runs at
+        // game.lua:2043, well before the run-start 'Voucher1' roll at :2178,
+        // so Zodiac's three redemptions shrink the pool that roll draws from.
+        // Applying these after the roll would offer a voucher the deck already
+        // owns.
+        for &key in run.config.deck.starting_vouchers() {
+            run.used_vouchers.insert(key);
+            run.apply_voucher(key);
+        }
+
+        // back.lua:184-196 — starting consumables. The Lua passes set 'Tarot'
+        // even for Ghost's Spectral `c_hex`; the forced key wins, so the set
+        // argument is inert and both decks land here the same way.
+        for &key in run.config.deck.starting_consumables() {
+            run.add_consumable(key);
+        }
 
         // game.lua:2178-2180 — right after the boss roll, the run-start shop
         // voucher and the ante-1 Small/Big skip tags are rolled ('Voucher1',
@@ -541,7 +580,12 @@ impl Run {
         }
 
         // Blind:set_blind (state_events.lua:333, blind.lua:78-216).
-        let mut blind = ActiveBlind::new(proto, self.ante);
+        let mut blind = ActiveBlind::new_scaled(
+            proto,
+            self.ante,
+            self.modifiers.scaling,
+            self.params.ante_scaling,
+        );
         if !blind.disabled {
             match proto.name {
                 // blind.lua:179-182 — The Water: 0 discards.
@@ -552,7 +596,7 @@ impl Run {
                 // blind.lua:183-186 — The Needle: play only 1 hand
                 // (round_resets.hands - 1 subtracted).
                 "The Needle" => {
-                    blind.hands_sub = STARTING_HANDS - 1;
+                    blind.hands_sub = self.round_resets_hands - 1;
                     self.hands_left -= blind.hands_sub;
                 }
                 // blind.lua:187-189 — The Manacle: -1 hand size.
@@ -665,6 +709,7 @@ impl Run {
                 most_played: self.most_played_hand,
                 mods,
                 prob_normal: self.prob_normal,
+                plasma_balance: self.modifiers.plasma_balance,
             };
             let r = evaluate_play(&mut ctx, &mut played, &mut self.hand, &mut hooks);
             blind_chips = self.active_blind.as_ref().map(|b| b.chips).unwrap_or(0.0);
@@ -771,7 +816,12 @@ impl Run {
             self.big_defeated = false;
             self.small_skipped = false;
             self.big_skipped = false;
-            let boss = get_new_boss(&mut self.rng, &mut self.bosses_used, self.ante, WIN_ANTE);
+            let boss = get_new_boss(
+                &mut self.rng,
+                &mut self.bosses_used,
+                self.ante,
+                self.config.win_ante,
+            );
             self.boss_choice = boss;
             self.boss_rerolled = false;
         }
@@ -1078,7 +1128,7 @@ impl Run {
         // Win check happens BEFORE ease_ante(1) (state_events.lua:111-114);
         // a Mr. Bones save on the ante-8 boss still wins the run
         // (state_events.lua:112 runs whenever the round survived).
-        if self.ante == WIN_ANTE && blind_proto.is_boss {
+        if !self.config.endless && self.ante == self.config.win_ante && blind_proto.is_boss {
             self.won = true;
         }
         // state_events.lua:129-138 — most played poker hand, recomputed only
@@ -1173,9 +1223,24 @@ impl Run {
         } else {
             0
         };
+        // blind.lua:84 — `no_blind_reward[self:get_type()]` zeroes the blind's
+        // own payout. Red Stake and above zero the Small Blind. The Lua does
+        // this in `set_blind`; zeroing the payout here is equivalent because
+        // nothing else reads `blind.dollars`.
+        if self.modifiers.no_blind_reward[self.blind_on_deck as usize] {
+            dollars = 0;
+        }
         if self.hands_left > 0 {
             // `hands_left * (G.GAME.modifiers.money_per_hand or 1)`
-            dollars += self.hands_left;
+            // (state_events.lua:1165-1168). Green Deck pays 2.
+            dollars += self.hands_left * self.modifiers.money_per_hand;
+        }
+        // `discards_left * G.GAME.modifiers.money_per_discard`
+        // (state_events.lua:1170-1173). Unlike money_per_hand there is no
+        // `or 1` default — the row only exists when a deck sets it, which is
+        // Green and nothing else.
+        if self.discards_left > 0 && self.modifiers.money_per_discard > 0 {
+            dollars += self.discards_left * self.modifiers.money_per_discard;
         }
         // Joker payouts (state_events.lua:1175-1182).
         dollars += joker_dollars;
@@ -1183,7 +1248,19 @@ impl Run {
         // when the just-defeated blind was a boss (tag.lua:117-131); every
         // held Investment triggers (no break in the evaluate_round loop).
         dollars += self.apply_eval_tags();
-        if self.dollars >= 5 {
+
+        // Anaglyph Deck (back.lua:111-120): a Double Tag after every boss.
+        // `Back:trigger_effect{context = 'eval'}` fires at the TOP of round
+        // eval (state_events.lua:1163), but the tag is added inside an
+        // `E_MANAGER` event — i.e. queued, not immediate — so it does NOT
+        // join the tag payout pass just above. Added here to match.
+        if self.modifiers.anaglyph_double_tag && self.last_blind_boss {
+            self.add_tag("tag_double", None);
+        }
+        // state_events.lua:1191 — `G.GAME.dollars >= 5 and not
+        // G.GAME.modifiers.no_interest`. The Green Deck trades interest for
+        // the flat per-hand/per-discard payouts above.
+        if self.dollars >= 5 && !self.modifiers.no_interest {
             // interest_amount * min(floor(dollars/5), interest_cap/5)
             // (state_events.lua:1192); Seed Money/Money Tree raise the cap.
             dollars += self.interest_amount
@@ -2071,6 +2148,43 @@ impl Run {
     /// used to buffer their creations here; they now land in `consumables`.)
     pub fn pending_consumables(&self) -> Vec<String> {
         self.consumables.iter().map(|c| c.key.to_string()).collect()
+    }
+
+    /// Chip requirement a blind proto would have in THIS run, applying the
+    /// stake's curve and the deck's `ante_scaling`.
+    ///
+    /// Use this for any blind that is not yet active (the blind-select
+    /// preview, the observation's `blind_on_deck`). Once a blind is selected
+    /// its requirement is frozen in `ActiveBlind::chips`, because bosses can
+    /// change it mid-round (The Wall, Violet Vessel).
+    pub fn proto_chips(&self, proto: &crate::blinds::BlindProto, ante: i64) -> f64 {
+        proto.chips_scaled(ante, self.modifiers.scaling, self.params.ante_scaling)
+    }
+
+    /// The deck this run is played on. Named `deck_kind` because `deck` is
+    /// already the draw pile.
+    pub fn deck_kind(&self) -> Deck {
+        self.config.deck
+    }
+
+    /// The stake this run is played on.
+    pub fn stake(&self) -> Stake {
+        self.config.stake
+    }
+
+    pub fn config(&self) -> RunConfig {
+        self.config
+    }
+
+    /// `G.GAME.starting_params` as resolved at run start. Read this rather
+    /// than the live fields when an effect wants the *starting* value.
+    pub fn starting_params(&self) -> &StartingParams {
+        &self.params
+    }
+
+    /// `G.GAME.modifiers` — economy and shop rules from deck and stake.
+    pub fn modifiers(&self) -> &Modifiers {
+        &self.modifiers
     }
 
     /// Held consumables.

@@ -12,6 +12,7 @@
 //! pure/blind-local rules.
 
 use crate::cards::{Card, HandType, Suit};
+use crate::config::Scaling;
 use crate::rng::{LuaRandom, RngState};
 use crate::scoring::HandsTable;
 use std::collections::HashMap;
@@ -21,20 +22,43 @@ fn lua_fmod(a: f64, b: f64) -> f64 {
     a - (a / b).floor() * b
 }
 
-/// `get_blind_amount(ante)`, `G.GAME.modifiers.scaling == 1` branch
-/// (misc_functions.lua:919-930). All arithmetic in f64 like Lua.
+/// `get_blind_amount(ante)` on the base curve (`scaling == 1`).
+///
+/// Kept as the zero-config entry point: every frozen oracle vector is a
+/// White-Stake run, so this is what they compare against.
 pub fn get_blind_amount(ante: i64) -> f64 {
+    get_blind_amount_scaled(ante, Scaling::One)
+}
+
+/// `get_blind_amount(ante)` (misc_functions.lua:919-954), all three curves.
+///
+/// The three `G.GAME.modifiers.scaling` branches differ ONLY in their ante-1..8
+/// table; the ante > 8 tail is byte-identical in all three, anchored on that
+/// table's last entry. All arithmetic in f64 like Lua.
+pub fn get_blind_amount_scaled(ante: i64, scaling: Scaling) -> f64 {
     let k = 0.75f64;
-    const AMOUNTS: [f64; 8] = [
+    // misc_functions.lua:922-924 / :932-935 / :943-946.
+    const AMOUNTS_1: [f64; 8] = [
         300.0, 800.0, 2000.0, 5000.0, 11000.0, 20000.0, 35000.0, 50000.0,
     ];
+    const AMOUNTS_2: [f64; 8] = [
+        300.0, 900.0, 2600.0, 8000.0, 20000.0, 36000.0, 60000.0, 100000.0,
+    ];
+    const AMOUNTS_3: [f64; 8] = [
+        300.0, 1000.0, 3200.0, 9000.0, 25000.0, 60000.0, 110000.0, 200000.0,
+    ];
+    let amounts = match scaling {
+        Scaling::One => &AMOUNTS_1,
+        Scaling::Two => &AMOUNTS_2,
+        Scaling::Three => &AMOUNTS_3,
+    };
     if ante < 1 {
         return 100.0;
     }
     if ante <= 8 {
-        return AMOUNTS[(ante - 1) as usize];
+        return amounts[(ante - 1) as usize];
     }
-    let a = AMOUNTS[7];
+    let a = amounts[7];
     let b = 1.6f64;
     let c = (ante - 8) as f64;
     let d = 1.0 + 0.2 * (ante - 8) as f64;
@@ -84,11 +108,19 @@ impl BlindProto {
         self.mult_x2 as f64 / 2.0
     }
 
+    /// Chip requirement on the base curve with no `ante_scaling`, i.e. any
+    /// White-Stake non-Plasma run. The frozen vectors all use this.
+    pub fn chips(&self, ante: i64) -> f64 {
+        self.chips_scaled(ante, Scaling::One, 1.0)
+    }
+
     /// `Blind:set_blind` chip requirement (blind.lua:107):
     /// `get_blind_amount(ante) * self.mult * G.GAME.starting_params.ante_scaling`
-    /// (ante_scaling == 1 for the Red Deck / White Stake).
-    pub fn chips(&self, ante: i64) -> f64 {
-        get_blind_amount(ante) * self.mult() * 1.0
+    ///
+    /// `scaling` picks the curve (stake), `ante_scaling` multiplies it (Plasma
+    /// sets 2). They are independent: Plasma on Gold Stake gets both.
+    pub fn chips_scaled(&self, ante: i64, scaling: Scaling, ante_scaling: f64) -> f64 {
+        get_blind_amount_scaled(ante, scaling) * self.mult() * ante_scaling
     }
 }
 
@@ -355,10 +387,20 @@ impl ActiveBlind {
     /// The side effects on the round (Water zeroing discards, Needle leaving
     /// 1 hand, Manacle shrinking the hand) live in `Run::select_blind`.
     pub fn new(proto: &'static BlindProto, ante: i64) -> Self {
+        ActiveBlind::new_scaled(proto, ante, Scaling::One, 1.0)
+    }
+
+    /// `Blind:set_blind(blind)` for an arbitrary deck and stake.
+    pub fn new_scaled(
+        proto: &'static BlindProto,
+        ante: i64,
+        scaling: Scaling,
+        ante_scaling: f64,
+    ) -> Self {
         ActiveBlind {
             proto,
-            // blind.lua:107, ante_scaling == 1 (Red Deck).
-            chips: proto.chips(ante),
+            // blind.lua:107.
+            chips: proto.chips_scaled(ante, scaling, ante_scaling),
             disabled: false,
             triggered: false,
             // blind.lua:94 sets prepped = true; blind.lua:176-178 clears it

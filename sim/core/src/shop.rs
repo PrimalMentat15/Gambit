@@ -1266,7 +1266,7 @@ impl Run {
     }
 
     /// `Card:apply_to_run` (card.lua:1880-1971) for the redeemed voucher.
-    fn apply_voucher(&mut self, key: &'static str) {
+    pub(crate) fn apply_voucher(&mut self, key: &'static str) {
         match key {
             // change_shop_size(1) (common_events.lua:1097-1118): +1 slot,
             // refilled immediately while the shop is open.
@@ -1542,6 +1542,11 @@ impl Run {
         if idx >= self.jokers.len() {
             return Err(RunError::BadSlot(format!("joker {idx}")));
         }
+        // The pre-sell pass can end the round (Luchador -> disable_boss ->
+        // the halved requirement is already met), and end_round destroys
+        // self-consuming jokers, so `idx` may not survive it. Lua removes the
+        // card by identity; track the sort_id and re-find it.
+        let selling_sort_id = self.jokers[idx].sort_id;
         // card.lua:1599 — `self:calculate_joker{selling_self = true}` runs
         // BEFORE the money and removal; a sold Blueprint/Brainstorm resolves
         // its copy target (Luchador/Diet Cola are not blueprint-gated).
@@ -1615,6 +1620,14 @@ impl Run {
                 _ => {}
             }
         }
+        let Some(idx) = self
+            .jokers
+            .iter()
+            .position(|j| j.sort_id == selling_sort_id)
+        else {
+            // Already destroyed by the pre-sell pass; nothing left to sell.
+            return Ok(());
+        };
         let j = self.jokers.remove(idx);
         self.dollars += self.joker_sell_value(&j);
         if j.edition == Edition::Negative {

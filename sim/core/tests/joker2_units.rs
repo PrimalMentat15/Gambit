@@ -91,6 +91,7 @@ impl World {
                 most_played: HandType::HighCard,
                 mods: self.mods,
                 prob_normal: self.env.prob_normal,
+                plasma_balance: false,
             };
             evaluate_play(&mut ctx, &mut play, &mut held, &mut hooks)
         };
