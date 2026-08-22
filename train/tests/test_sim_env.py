@@ -99,12 +99,17 @@ def test_mask_semantics():
         obs, masks, _r, _d, _infos = env.step(actions)
 
 
-def test_global_reserved_and_dtypes():
+def test_global_deck_stake_and_dtypes():
     rng = np.random.default_rng(9)
     env = SimBalatroEnv(num_envs=8)
     obs, masks = env.reset(list(range(8)))
+    deck = slice(E.GLOBAL_DECK_OFF, E.GLOBAL_DECK_OFF + E.N_DECKS)
     for _ in range(100):
-        assert (obs["global"][:, E.GLOBAL_RESERVED_OFF :] == 0.0).all()
+        # The deck block is exactly one-hot in every env, every step: the deck
+        # is fixed for the whole episode and must never read as "no deck".
+        assert (obs["global"][:, deck].sum(axis=1) == 1.0).all()
+        stake = obs["global"][:, E.GLOBAL_STAKE]
+        assert ((stake >= 0.0) & (stake <= 1.0)).all()
         for k in obs:
             assert np.isfinite(obs[k]).all(), k
         actions = random_legal_actions(rng, obs, masks)

@@ -195,6 +195,11 @@ class _Game:
         g[E.GLOBAL_CONSUMABLE_SLOT_COUNT] = self.consumable_slots / 3.0
         g[E.GLOBAL_DECK_SIZE] = np.log1p(self.deck_counts.sum())
         g[E.GLOBAL_HAND_SIZE] = self.hand_size / 10.0
+        # Deck/stake: the mock only ever models Red/White, but it must still
+        # satisfy the contract's one-hot invariant so it stays a valid stand-in
+        # for the sim env in shape/consistency tests.
+        g[E.GLOBAL_DECK_OFF + int(E.Deck.RED)] = 1.0
+        g[E.GLOBAL_STAKE] = (int(E.Stake.WHITE) - 1) / (E.N_STAKES - 1)
 
         obs["deck_counts"][i] = self.deck_counts
         obs["drawpile_counts"][i] = self.drawpile

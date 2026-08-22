@@ -286,7 +286,7 @@ pub fn encode_obs(run: &Run) -> EnvObs {
                     BlindStage::Big => &balatro_core::blinds::BL_BIG,
                     BlindStage::Boss => balatro_core::blinds::boss_by_key(run.boss_choice()),
                 };
-                (proto, proto.chips(run.blind_ante()))
+                (proto, run.proto_chips(proto, run.blind_ante()))
             }
         };
         let kind = if proto.is_boss {
@@ -328,7 +328,19 @@ pub fn encode_obs(run: &Run) -> EnvObs {
         let full_deck = run.deck_len() + run.hand().len() + run.discard_cards().len();
         g[GLOBAL_DECK_SIZE] = log1p(full_deck as f64);
         g[GLOBAL_HAND_SIZE] = run.hand_size() as f32 / 10.0;
-        // [48..64) reserved, must stay 0.0.
+        // NOTE: the divisors above (6.0 / 3.0 / 10.0) are fixed normalization
+        // constants, deliberately NOT tied to JOKER_SLOTS / CONSUMABLE_SLOTS /
+        // HAND_MAX. Raising a slot cap must not rescale a feature the policy
+        // has already learned, so a Black Deck reading 6/6 = 1.0 or a Painted
+        // hand reading 11/10 = 1.1 is correct and intended.
+
+        // Deck one-hot + stake ordinal. The core is Red/White-only until P7
+        // Stage 1 wires `RunConfig` through; these become `run.deck()` /
+        // `run.stake()` there. Encoded here (rather than left at zero) so the
+        // one-hot invariant "exactly one deck bit set, always" holds from the
+        // first migrated checkpoint onward.
+        g[GLOBAL_DECK_OFF + Deck::Red as usize] = 1.0;
+        g[GLOBAL_STAKE] = Stake::White.ordinal_feature();
     }
 
     // ----------------------------------------------------- deck composition

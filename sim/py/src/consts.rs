@@ -6,9 +6,11 @@ use balatro_core::cards::{Edition, Enhancement, HandType, Seal, Suit};
 use balatro_core::items::{JokerId, BOOSTERS, PLANETS, SPECTRALS, TAROTS, VOUCHERS};
 
 // ---------------------------------------------------------------- entity slots
-pub const HAND_MAX: usize = 10;
-pub const JOKER_SLOTS: usize = 6;
-pub const CONSUMABLE_SLOTS: usize = 3;
+// See the note in encoding.py: these size the target MASKS as well as the
+// observation, so anything past a cap is unselectable, not just unobserved.
+pub const HAND_MAX: usize = 12;
+pub const JOKER_SLOTS: usize = 16;
+pub const CONSUMABLE_SLOTS: usize = 8;
 pub const SHOP_SLOTS: usize = 6;
 pub const PACK_SLOTS: usize = 5;
 
@@ -34,7 +36,14 @@ pub const JOKER_SELL_OFF: usize = 5;
 pub const JOKER_STATE_OFF: usize = 6;
 pub const N_JOKER_STATE: usize = 4;
 pub const JOKER_DEBUFFED_OFF: usize = 10;
-pub const F_JOKER_FEAT: usize = 11;
+pub const JOKER_ETERNAL_OFF: usize = 11;
+pub const JOKER_PERISHABLE_OFF: usize = 12;
+pub const JOKER_PERISH_TALLY_OFF: usize = 13;
+pub const JOKER_RENTAL_OFF: usize = 14;
+pub const F_JOKER_FEAT: usize = 15;
+
+/// `G.GAME.perishable_rounds` (game.lua:1896) — divisor for the tally feature.
+pub const PERISHABLE_ROUNDS: f64 = 5.0;
 
 // -------------------------------------------------------------- shop features
 /// `encoding.ShopKind` order.
@@ -51,7 +60,10 @@ pub enum ShopKind {
 pub const SHOP_KIND_OFF: usize = 0;
 pub const SHOP_COST_OFF: usize = 7;
 pub const SHOP_EDITION_OFF: usize = 8;
-pub const F_SHOP_FEAT: usize = 13;
+pub const SHOP_ETERNAL_OFF: usize = 13;
+pub const SHOP_PERISHABLE_OFF: usize = 14;
+pub const SHOP_RENTAL_OFF: usize = 15;
+pub const F_SHOP_FEAT: usize = 16;
 
 // ------------------------------------------------------------- blind features
 pub const BLIND_KIND_OFF: usize = 0;
@@ -88,7 +100,60 @@ pub const GLOBAL_JOKER_SLOT_COUNT: usize = 44;
 pub const GLOBAL_CONSUMABLE_SLOT_COUNT: usize = 45;
 pub const GLOBAL_DECK_SIZE: usize = 46;
 pub const GLOBAL_HAND_SIZE: usize = 47;
+/// Deck one-hot, 15 wide, in `Deck` order. Consumes what used to be the
+/// "reserved, must be 0.0" block together with `GLOBAL_STAKE` — exactly, which
+/// is why `F_GLOBAL` is unchanged and the global MLP survives the migration.
+pub const GLOBAL_DECK_OFF: usize = 48;
+/// `(stake_level - 1) / 7.0`.
+pub const GLOBAL_STAKE: usize = 63;
 pub const F_GLOBAL: usize = 64;
+
+pub const N_DECKS: usize = 15;
+pub const N_STAKES: usize = 8;
+
+/// `encoding.Deck` order — the `order` field of the `b_*` prototypes in
+/// game.lua:628-642, zero-based. `b_challenge` carries `omit = true` and is
+/// not represented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deck {
+    Red = 0,
+    Blue = 1,
+    Yellow = 2,
+    Green = 3,
+    Black = 4,
+    Magic = 5,
+    Nebula = 6,
+    Ghost = 7,
+    Abandoned = 8,
+    Checkered = 9,
+    Zodiac = 10,
+    Painted = 11,
+    Anaglyph = 12,
+    Plasma = 13,
+    Erratic = 14,
+}
+
+/// `encoding.Stake` order — the `stake_level` field from game.lua:253-260.
+/// ONE-BASED, matching `G.GAME.stake`, because every modifier is a `>=` test
+/// against that number (game.lua:2031-2041).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stake {
+    White = 1,
+    Red = 2,
+    Green = 3,
+    Black = 4,
+    Blue = 5,
+    Purple = 6,
+    Orange = 7,
+    Gold = 8,
+}
+
+impl Stake {
+    /// The `GLOBAL_STAKE` feature: `(stake_level - 1) / 7.0`, in `[0, 1]`.
+    pub fn ordinal_feature(self) -> f32 {
+        (self as usize - 1) as f32 / (N_STAKES - 1) as f32
+    }
+}
 
 // ---------------------------------------------------------- deck composition
 pub const N_DECK_SLOTS: usize = 52;

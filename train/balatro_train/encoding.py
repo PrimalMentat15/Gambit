@@ -28,11 +28,21 @@ import enum
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# Entity slot counts
+# Entity slot caps
 # ---------------------------------------------------------------------------
-HAND_MAX = 10          # max hand cards observed / selectable
-JOKER_SLOTS = 6        # max joker slots observed
-CONSUMABLE_SLOTS = 3   # max consumable slots observed
+# A card past its cap is not merely unobserved -- the target masks are sized
+# from these too, so it is also UNSELECTABLE (unplayable / unsellable /
+# unusable). They must therefore cover what the game can actually reach, not
+# the common case:
+#   hand   base 8, Painted Deck +2, Juggler +1, Turtle Bean +5 (transient)
+#   jokers base 5, Black Deck +1, Antimatter +1, and +1 per NEGATIVE joker --
+#          which is unbounded in principle (Perkeo / Blueprint / Cryptid lines)
+#   consumables base 2, Crystal Ball +1, +1 per Negative consumable
+# 16/8 covers ordinary ante-8 play with headroom; a deep endless stack can
+# still exceed it (recorded as a known limitation).
+HAND_MAX = 12          # max hand cards observed / selectable
+JOKER_SLOTS = 16       # max joker slots observed
+CONSUMABLE_SLOTS = 8   # max consumable slots observed
 SHOP_SLOTS = 6         # max simultaneously-visible shop items (cards+vouchers+packs)
 PACK_SLOTS = 5         # max items offered inside an opened booster pack
 
@@ -96,7 +106,7 @@ CARD_FACEDOWN_OFF = 37
 F_CARD = 38
 
 # ---------------------------------------------------------------------------
-# Joker features: ids separate (int64), float feats F_JOKER_FEAT = 11
+# Joker features: ids separate (int64), float feats F_JOKER_FEAT = 15
 # ---------------------------------------------------------------------------
 # joker_ids : (JOKER_SLOTS,) int64, 0 = empty slot.
 # joker_feats layout:
@@ -104,18 +114,30 @@ F_CARD = 38
 #   [5]    sell value, log1p
 #   [6:10) 4 generic per-joker state scalars, each sign*log1p normalized.
 #          Semantics are joker-dependent (e.g. accumulated mult, counter,
-#          rounds remaining, sticker flags packed by the Rust side); the
-#          binding must document its per-joker packing but the SHAPE is fixed.
+#          rounds remaining); the binding must document its per-joker packing
+#          but the SHAPE is fixed. Stickers are NOT packed here -- they have
+#          dedicated slots at [11:15) below.
 #   [10]   debuffed flag (0/1)
+#   [11]   eternal sticker (0/1)          -- Black Stake and above
+#   [12]   perishable sticker (0/1)       -- Orange Stake and above
+#   [13]   perish tally / PERISHABLE_ROUNDS (rounds left before the debuff)
+#   [14]   rental sticker (0/1)           -- Gold Stake only
 JOKER_EDITION_OFF = 0
 JOKER_SELL_OFF = 5
 JOKER_STATE_OFF = 6
 N_JOKER_STATE = 4
 JOKER_DEBUFFED_OFF = 10
-F_JOKER_FEAT = 11
+JOKER_ETERNAL_OFF = 11
+JOKER_PERISHABLE_OFF = 12
+JOKER_PERISH_TALLY_OFF = 13
+JOKER_RENTAL_OFF = 14
+F_JOKER_FEAT = 15
+
+#: ``G.GAME.perishable_rounds`` (game.lua:1896) -- the divisor for the tally.
+PERISHABLE_ROUNDS = 5
 
 # ---------------------------------------------------------------------------
-# Shop item features: ids separate (int64), float feats F_SHOP_FEAT = 13
+# Shop item features: ids separate (int64), float feats F_SHOP_FEAT = 16
 # ---------------------------------------------------------------------------
 
 
@@ -147,10 +169,16 @@ N_SHOP_KINDS = 7
 #   [0:7)   kind one-hot (all-zero when slot empty)
 #   [7]     cost in $, log1p
 #   [8:13)  edition one-hot (all-zero when N/A)
+#   [13]    eternal sticker (0/1)
+#   [14]    perishable sticker (0/1)
+#   [15]    rental sticker (0/1)
 SHOP_KIND_OFF = 0
 SHOP_COST_OFF = 7
 SHOP_EDITION_OFF = 8
-F_SHOP_FEAT = 13
+SHOP_ETERNAL_OFF = 13
+SHOP_PERISHABLE_OFF = 14
+SHOP_RENTAL_OFF = 15
+F_SHOP_FEAT = 16
 
 # ---------------------------------------------------------------------------
 # Blind features: F_BLIND = 38
@@ -192,6 +220,37 @@ class Phase(enum.IntEnum):
 N_PHASES = 6
 N_HAND_TYPES = 12  # poker-hand-level table rows (High Card ... Flush Five)
 
+
+class Deck(enum.IntEnum):
+    """Deck (Back) identity.
+
+    FROZEN ORDER: the `order` field of the `b_*` prototypes in game.lua:628-642,
+    zero-based.  `b_challenge` (game.lua:644) carries `omit = true` and never
+    enters the Back pool, so it is not represented.
+    """
+
+    RED = 0; BLUE = 1; YELLOW = 2; GREEN = 3; BLACK = 4
+    MAGIC = 5; NEBULA = 6; GHOST = 7; ABANDONED = 8; CHECKERED = 9
+    ZODIAC = 10; PAINTED = 11; ANAGLYPH = 12; PLASMA = 13; ERRATIC = 14
+
+
+N_DECKS = 15
+
+
+class Stake(enum.IntEnum):
+    """Stake difficulty level.
+
+    FROZEN ORDER: the `stake_level` field of the `stake_*` prototypes in
+    game.lua:253-260.  ONE-BASED, matching `G.GAME.stake`, because every
+    modifier is written as a `>=` test against that number (game.lua:2031-2041).
+    """
+
+    WHITE = 1; RED = 2; GREEN = 3; BLACK = 4
+    BLUE = 5; PURPLE = 6; ORANGE = 7; GOLD = 8
+
+
+N_STAKES = 8
+
 # global layout (indices):
 #   [0]      money, sign*log1p (money can go negative via certain effects)
 #   [1]      hands left this blind / 4.0
@@ -207,7 +266,15 @@ N_HAND_TYPES = 12  # poker-hand-level table rows (High Card ... Flush Five)
 #   [45]     consumable slots total / 3.0
 #   [46]     full deck size, log1p
 #   [47]     current hand size / 10.0
-#   [48:64)  reserved, must be 0.0 (headroom for tags, vouchers, stake, ...)
+#   [48:63)  deck (Back) one-hot, N_DECKS = 15, in `Deck` order
+#   [63]     stake ordinal, (stake_level - 1) / 7.0 -- stakes are strictly
+#            nested (game.lua:2031-2041), so an ordinal carries the structure
+#            an 8-way one-hot would only have to relearn.
+#
+# NOTE: [48:64) was previously "reserved, must be 0.0".  Deck + stake consume
+# it EXACTLY, which is why F_GLOBAL stays 64 and the global MLP's weight shape
+# is unchanged across the P7 migration.  There is no reserved headroom left in
+# `global`; the next new global feature must widen F_GLOBAL.
 GLOBAL_MONEY = 0
 GLOBAL_HANDS_LEFT = 1
 GLOBAL_DISCARDS_LEFT = 2
@@ -221,7 +288,8 @@ GLOBAL_JOKER_SLOT_COUNT = 44
 GLOBAL_CONSUMABLE_SLOT_COUNT = 45
 GLOBAL_DECK_SIZE = 46
 GLOBAL_HAND_SIZE = 47
-GLOBAL_RESERVED_OFF = 48
+GLOBAL_DECK_OFF = 48
+GLOBAL_STAKE = 63
 F_GLOBAL = 64
 
 # ---------------------------------------------------------------------------

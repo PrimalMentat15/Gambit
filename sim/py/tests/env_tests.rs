@@ -105,7 +105,7 @@ fn check_obs_invariants(o: &EnvObs) {
             assert_eq!(onehot_sum(f), 0.0, "padding slot {slot} not empty");
         }
     }
-    // Global: phase and ante one-hots, reserved zeros.
+    // Global: phase, ante and deck one-hots; stake ordinal in range.
     let g = &o.global;
     assert_eq!(
         onehot_sum(&g[GLOBAL_ANTE_OFF..GLOBAL_ANTE_OFF + N_ANTE_ONEHOT]),
@@ -115,7 +115,18 @@ fn check_obs_invariants(o: &EnvObs) {
         onehot_sum(&g[GLOBAL_PHASE_OFF..GLOBAL_PHASE_OFF + N_PHASES]),
         1.0
     );
-    assert!(g[48..64].iter().all(|&x| x == 0.0), "reserved not zero");
+    // The deck block is exactly one-hot in every state: the deck is fixed for
+    // the whole run and must never read as "no deck".
+    assert_eq!(
+        onehot_sum(&g[GLOBAL_DECK_OFF..GLOBAL_DECK_OFF + N_DECKS]),
+        1.0,
+        "deck one-hot not set"
+    );
+    assert!(
+        (0.0..=1.0).contains(&g[GLOBAL_STAKE]),
+        "stake ordinal out of range: {}",
+        g[GLOBAL_STAKE]
+    );
     // Blind: kind one-hot.
     assert_eq!(
         onehot_sum(&o.blind[BLIND_KIND_OFF..BLIND_KIND_OFF + 3]),

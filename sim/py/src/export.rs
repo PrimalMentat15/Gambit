@@ -10,6 +10,7 @@
 //! (`legal_actions_json`, `apply_action`, `bot_direct_action`) — P5 drives
 //! the sim through these instead of the RL obs/action encoding.
 
+use balatro_core::config::{Deck, Stake};
 use balatro_core::cards::{Card, Edition, Enhancement, HandType, Seal};
 use balatro_core::items::{consumable_by_key, tag_by_key};
 use balatro_core::run::{Action, BlindStage, Run, State};
@@ -209,7 +210,7 @@ fn blind_json(
     // The mod computes score from get_blind_amount(round_resets.ante),
     // which ease_ante bumps at end_round — BEFORE blind_ante snaps to it
     // at cash out. Mirror the mod exactly.
-    let score = proto.chips(run.ante()).floor() as i64;
+    let score = run.proto_chips(proto, run.ante()).floor() as i64;
     json!({
         "type": ty,
         "status": blind_status(run, stage),
@@ -316,12 +317,51 @@ fn pack_item_json(run: &Run, item: &PackItem) -> Value {
 }
 
 /// The full observable run state as JSON (see module docs for schema).
+/// `Deck::name()` minus the trailing " Deck", uppercased — the form
+/// balatrobot's state dump uses.
+fn export_deck_name(d: Deck) -> &'static str {
+    match d {
+        Deck::Red => "RED",
+        Deck::Blue => "BLUE",
+        Deck::Yellow => "YELLOW",
+        Deck::Green => "GREEN",
+        Deck::Black => "BLACK",
+        Deck::Magic => "MAGIC",
+        Deck::Nebula => "NEBULA",
+        Deck::Ghost => "GHOST",
+        Deck::Abandoned => "ABANDONED",
+        Deck::Checkered => "CHECKERED",
+        Deck::Zodiac => "ZODIAC",
+        Deck::Painted => "PAINTED",
+        Deck::Anaglyph => "ANAGLYPH",
+        Deck::Plasma => "PLASMA",
+        Deck::Erratic => "ERRATIC",
+    }
+}
+
+/// Stake colour, uppercased ("White Chip" -> "WHITE").
+fn export_stake_name(s: Stake) -> &'static str {
+    match s {
+        Stake::White => "WHITE",
+        Stake::Red => "RED",
+        Stake::Green => "GREEN",
+        Stake::Black => "BLACK",
+        Stake::Blue => "BLUE",
+        Stake::Purple => "PURPLE",
+        Stake::Orange => "ORANGE",
+        Stake::Gold => "GOLD",
+    }
+}
+
 pub fn state_json(run: &Run) -> Value {
     let mut root = Map::new();
     root.insert("state".into(), json!(state_name(run.state())));
     root.insert("seed".into(), json!(run.seed()));
-    root.insert("deck".into(), json!("RED"));
-    root.insert("stake".into(), json!("WHITE"));
+    // balatrobot reports the deck/stake as the uppercased leading word of the
+    // in-game name ("Red Deck" -> "RED", "White Chip" -> "WHITE"), which is
+    // what the crossval harness diffs against.
+    root.insert("deck".into(), json!(export_deck_name(run.deck_kind())));
+    root.insert("stake".into(), json!(export_stake_name(run.stake())));
     root.insert("ante_num".into(), json!(run.ante()));
     root.insert("round_num".into(), json!(run.round()));
     root.insert("money".into(), json!(run.dollars()));
