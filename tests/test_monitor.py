@@ -8,6 +8,7 @@ and writes a screenshot so the result can actually be looked at.
     venv/Scripts/python.exe tests/test_monitor.py [run_dir] [-o out.png]
 """
 
+import collections
 import json
 import os
 import sys
@@ -75,6 +76,58 @@ def test_tail_reader():
 
     print("tail reader OK: incremental, partial-line safe, utf-8 safe, restart detected")
 
+
+def test_tail_reader_bounded_and_filtered():
+    """Attaching to a big file must stay bounded and skip bulk history.
+
+    Reading a mature run in one shot costs ~7.5 GB for a 1.1 GB events.jsonl,
+    which starves the trainer's page-locked H2D buffers and surfaces as a CUDA
+    OOM in a process the monitor never touches. Two properties prevent that:
+    reads are capped, and `episode_end` -- 99.95% of a mature file, consumed
+    only by a bounded RingSeries -- is not replayed from deep history.
+    """
+    tmp = tempfile.mkdtemp()
+    path = os.path.join(tmp, "events.jsonl")
+
+    n_bulk, n_rare = 20000, 25
+    every = n_bulk // n_rare
+    with open(path, "w", encoding="utf-8") as f:
+        for i in range(n_bulk):
+            print(json.dumps({"v": 1, "seq": i, "type": "episode_end",
+                              "data": {"r": 1.0, "won": False}}), file=f)
+            if i % every == 0:
+                print(json.dumps({"v": 1, "seq": i, "type": "rollout",
+                                  "data": {"global_step": i}}), file=f)
+
+    size = os.path.getsize(path)
+    # Force a history region: the tail window is a small slice of the file.
+    reader = TailReader(path, max_chunk=64 * 1024, backfill_bytes=size // 10)
+
+    events, biggest = [], 0
+    while True:
+        batch, _ = reader.read()
+        biggest = max(biggest, len(batch))
+        events.extend(batch)
+        if not reader.pending:
+            break
+
+    kinds = collections.Counter(e["type"] for e in events)
+    assert reader.skipped > 0, "nothing filtered -- history filter is inert"
+    assert kinds["rollout"] == n_rare, (
+        f"rare events must survive history: {kinds['rollout']} of {n_rare}")
+    assert 0 < kinds["episode_end"] < n_bulk, (
+        "tail window should deliver recent episodes but not the whole run")
+    assert kinds["episode_end"] + reader.skipped == n_bulk, "lost bulk events"
+
+    # Batches are bounded by the chunk cap, not by the file size.
+    assert biggest < n_bulk // 4, f"unbounded batch: {biggest}"
+
+    # A second pass over an unchanged file yields nothing and is not pending.
+    assert reader.read() == ([], False)
+    assert not reader.pending
+
+    print(f"tail reader OK: bounded (max batch {biggest}), "
+          f"skipped {reader.skipped:,} bulk, kept all {n_rare} rare events")
 
 def test_discovery():
     """Every panel file is found and declares the required attributes"""

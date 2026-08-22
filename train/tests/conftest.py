@@ -1,3 +1,5 @@
+import pathlib
+
 import numpy as np
 import pytest
 import torch
@@ -81,3 +83,24 @@ def policy_step(policy, env, obs, masks, deterministic=False, need_aux=False):
     actions_np = actions_to_numpy(actions)
     step_out = env.step(actions_np)
     return actions_np, logp, ent, value, aux, obs_t, masks_t, actions, step_out
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_writes_into_real_run_dirs():
+    """Fail loudly if the suite leaves a run behind in the repo's runs/.
+
+    A test that forgets to redirect `log.log_dir` writes a real run directory
+    whose metadata timestamp sorts as "newest". The monitor's "Follow latest"
+    then abandons a live multi-day run for the test artifact -- and switching
+    back re-reads a multi-GB events.jsonl. The failure shows up hours later in
+    a different tool, so catch it here instead.
+    """
+    runs = pathlib.Path(__file__).resolve().parents[1] / "runs"
+    before = {p.name for p in runs.iterdir()} if runs.is_dir() else set()
+    yield
+    after = {p.name for p in runs.iterdir()} if runs.is_dir() else set()
+    created = after - before
+    assert not created, (
+        f"tests created run directories in {runs}: {sorted(created)}. "
+        "Point cfg.log.log_dir / cfg.log.ckpt_dir at tmp_path instead."
+    )

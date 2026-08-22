@@ -237,9 +237,18 @@ class MonitorWindow(QMainWindow):
                 self.run_picker.setCurrentIndex(paths.index(current))
 
         if auto and self.follow_action.isChecked() and paths:
-            if self.run_picker.currentIndex() != 0:
-                self.run_picker.setCurrentIndex(0)
-            self.bus.set_source(paths[0])
+            # "Follow latest" means the run that is actually TRAINING, not
+            # whichever directory was written to most recently. A short-lived
+            # debug or test run sorts newest and would otherwise yank the view
+            # off a live multi-day run -- and switching back costs a full
+            # re-read of its events.jsonl. Fall back to newest overall only
+            # when nothing is active.
+            target = next((r.events_path for r in runs if r.read_meta().get("active")),
+                          paths[0])
+            index = paths.index(target)
+            if self.run_picker.currentIndex() != index:
+                self.run_picker.setCurrentIndex(index)
+            self.bus.set_source(target)
         elif self.bus.path is None and paths:
             self.bus.set_source(self.run_picker.currentData())
 

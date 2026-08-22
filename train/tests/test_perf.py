@@ -9,8 +9,10 @@ now happen BEFORE env.step).
 """
 
 import dataclasses
+import tempfile
 
 import numpy as np
+
 import pytest
 import torch
 
@@ -24,8 +26,16 @@ from tests.conftest import SMALL_POLICY, rollout_states
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 
 
+#: Tests must never write into the repo's real runs/ or checkpoints/. Doing so
+#: leaves a run directory behind that sorts as "newest", which makes the
+#: monitor's "Follow latest" abandon a live multi-day run for a test artifact.
+_SCRATCH = tempfile.mkdtemp(prefix="balatro-perf-test-")
+
+
 def _base_cfg(**perf):
     cfg = load_config("configs/debug.yaml")
+    cfg.log.log_dir = _SCRATCH
+    cfg.log.ckpt_dir = _SCRATCH
     cfg.seed = 11
     cfg.env.num_envs = 16
     cfg.env.seed = 5

@@ -89,12 +89,18 @@ class State:
         if self.reader is None:
             return
 
-        events, restarted = self.reader.read()
-        if restarted:
-            self.reset()
-
-        for event in events:
-            self._absorb(event)
+        # Reads are capped (see TailReader.MAX_CHUNK), so catching up on an
+        # existing file takes several passes. Drain them here rather than
+        # advancing one chunk per HTTP poll, which would leave the page
+        # minutes behind a long run.
+        while True:
+            events, restarted = self.reader.read()
+            if restarted:
+                self.reset()
+            for event in events:
+                self._absorb(event)
+            if not self.reader.pending:
+                break
 
     def _absorb(self, event: dict) -> None:
         kind = event.get("type")
