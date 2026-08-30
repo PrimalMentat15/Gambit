@@ -14,8 +14,9 @@ use crate::action::ActionRow;
 use crate::bot::bot_action;
 use crate::consts::*;
 use crate::encode::{EnvMasks, EnvObs};
-use crate::env::{EnvSlot, Episode};
+use crate::env::{ConfigDist, EnvSlot, Episode};
 use crate::pool::SnapshotPool;
+use balatro_core::config::{Deck, RunConfig, Stake};
 
 #[pyclass]
 pub struct BalatroVecEnv {
@@ -28,6 +29,12 @@ pub struct BalatroVecEnv {
     /// that an auto-reset starts from it. See `env::EnvSlot::begin_episode`.
     pool: Option<Arc<SnapshotPool>>,
     snapshot_fraction: f64,
+    /// Fixed deck/stake every env resets to, unless `dist` overrides an axis.
+    config: RunConfig,
+    /// Per-episode deck/stake sampling. Empty by default, and empty means the
+    /// reset path draws NOTHING extra — single-config runs stay bit-identical
+    /// to the pre-P7 env.
+    dist: ConfigDist,
 }
 
 fn check_win_ante(win_ante: u8) -> PyResult<()> {
@@ -224,15 +231,32 @@ impl BalatroVecEnv {
     }
 }
 
+impl BalatroVecEnv {
+    /// Push the fixed deck/stake to every slot. Like `set_win_ante`, this
+    /// lands at each env's next (auto-)reset rather than mutating a run in
+    /// flight -- an episode must never have its rules changed underneath it.
+    fn push_config(&mut self) {
+        let config = self.config;
+        for slot in &mut self.slots {
+            slot.set_config(config);
+        }
+    }
+}
+
 #[pymethods]
 impl BalatroVecEnv {
     #[new]
-    #[pyo3(signature = (num_envs, strict = true, win_ante = 8))]
-    fn new(num_envs: usize, strict: bool, win_ante: u8) -> PyResult<Self> {
+    #[pyo3(signature = (num_envs, strict = true, win_ante = 8, deck = 0, stake = 1))]
+    fn new(num_envs: usize, strict: bool, win_ante: u8, deck: usize, stake: u8) -> PyResult<Self> {
         if num_envs == 0 {
             return Err(PyValueError::new_err("num_envs must be >= 1"));
         }
         check_win_ante(win_ante)?;
+        let deck = Deck::from_index(deck).ok_or_else(|| {
+            PyValueError::new_err(format!("deck index {deck} out of range 0..15"))
+        })?;
+        let stake = Stake::from_level(stake)
+            .ok_or_else(|| PyValueError::new_err(format!("stake {stake} out of range 1..=8")))?;
         Ok(BalatroVecEnv {
             slots: Vec::new(),
             num_envs,
@@ -241,6 +265,18 @@ impl BalatroVecEnv {
             win_ante,
             pool: None,
             snapshot_fraction: 0.0,
+            // NOTE: win_ante deliberately stays at RunConfig's default 8 here.
+            // The env's `win_ante` is the curriculum goalpost (when an episode
+            // ENDS); RunConfig's feeds `get_new_boss`, which gates showdown
+            // bosses on `ante == win_ante`. Wiring the curriculum value in
+            // would change the boss pool, and therefore the RNG stream, on
+            // every rung below 8.
+            config: RunConfig {
+                deck,
+                stake,
+                ..RunConfig::default()
+            },
+            dist: ConfigDist::default(),
         })
     }
 
@@ -251,6 +287,66 @@ impl BalatroVecEnv {
 
     fn set_shaping_beta(&mut self, beta: f64) {
         self.beta = beta;
+    }
+
+    /// The deck every env resets to (see `set_deck_distribution` to mix).
+    /// Applies at each env's NEXT (auto-)reset, like `set_win_ante`.
+    fn set_deck(&mut self, deck: usize) -> PyResult<()> {
+        let d = Deck::from_index(deck).ok_or_else(|| {
+            PyValueError::new_err(format!("deck index {deck} out of range 0..15"))
+        })?;
+        self.config.deck = d;
+        self.push_config();
+        Ok(())
+    }
+
+    /// The stake every env resets to. ONE-BASED (1 = White .. 8 = Gold),
+    /// matching `G.GAME.stake` and the `Stake` discriminants.
+    fn set_stake(&mut self, stake: u8) -> PyResult<()> {
+        let st = Stake::from_level(stake)
+            .ok_or_else(|| PyValueError::new_err(format!("stake {stake} out of range 1..=8")))?;
+        self.config.stake = st;
+        self.push_config();
+        Ok(())
+    }
+
+    /// Sample a deck per episode from `weights` (15 non-negative numbers, in
+    /// `Deck` order; they need not sum to 1). Pass an empty list to go back to
+    /// the fixed `set_deck` value and stop drawing entirely.
+    ///
+    /// The draw comes from each env's OWN seed stream in a fixed order, so a
+    /// mixture stays a pure function of (seeds, pool, schedule) exactly like
+    /// snapshot mixing does.
+    fn set_deck_distribution(&mut self, weights: Vec<f64>) -> PyResult<()> {
+        if weights.is_empty() {
+            self.dist.deck_cdf = None;
+            return Ok(());
+        }
+        let cdf = ConfigDist::cdf(&Deck::ALL, &weights).map_err(PyValueError::new_err)?;
+        self.dist.deck_cdf = Some(cdf);
+        Ok(())
+    }
+
+    /// Sample a stake per episode from `weights` (8 non-negative numbers, in
+    /// `Stake` order, White first). Empty list restores the fixed value.
+    fn set_stake_distribution(&mut self, weights: Vec<f64>) -> PyResult<()> {
+        if weights.is_empty() {
+            self.dist.stake_cdf = None;
+            return Ok(());
+        }
+        let cdf = ConfigDist::cdf(&Stake::ALL, &weights).map_err(PyValueError::new_err)?;
+        self.dist.stake_cdf = Some(cdf);
+        Ok(())
+    }
+
+    #[getter]
+    fn deck(&self) -> usize {
+        self.config.deck as usize
+    }
+
+    #[getter]
+    fn stake(&self) -> u8 {
+        self.config.stake.level()
     }
 
     /// Curriculum knob: episodes end with the +15 win bonus once the boss
@@ -326,10 +422,12 @@ impl BalatroVecEnv {
             )));
         }
         let win_ante = self.win_ante;
+        let config = self.config;
+        let dist = &self.dist;
         self.slots = py.allow_threads(|| {
             seeds
                 .into_par_iter()
-                .map(|s| EnvSlot::with_win_ante(s, win_ante))
+                .map(|s| EnvSlot::with_config_dist(s, win_ante, config, dist))
                 .collect::<Vec<_>>()
         });
         self.observe_all(py)
@@ -352,6 +450,7 @@ impl BalatroVecEnv {
         self.check_started()?;
         let rows = parse_actions(actions, self.num_envs)?;
         let beta = self.beta;
+        let dist = &self.dist;
         let strict = self.strict;
         let pool = self.pool.clone();
         let fraction = self.snapshot_fraction;
@@ -364,7 +463,7 @@ impl BalatroVecEnv {
                 .enumerate()
                 .map(|(i, (slot, row))| {
                     let (reward, done, info) =
-                        slot.step_with_pool(i, row, beta, strict, pool.as_deref(), fraction)?;
+                        slot.step_with_pool(i, row, beta, strict, pool.as_deref(), fraction, dist)?;
                     Ok((reward, done, info, slot.observe(), slot.masks))
                 })
                 .collect()
@@ -389,6 +488,8 @@ impl BalatroVecEnv {
                 e.set_item("ante", ep.ante)?;
                 e.set_item("won", ep.won)?;
                 e.set_item("from_snapshot", ep.from_snapshot)?;
+                e.set_item("deck", ep.deck as usize)?;
+                e.set_item("stake", ep.stake.level())?;
                 d.set_item("episode", e)?;
             }
             infos.append(d)?;

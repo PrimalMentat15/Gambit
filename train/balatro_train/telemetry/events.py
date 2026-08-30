@@ -23,6 +23,7 @@ class EventType:
     CURRICULUM_PROMOTION = "curriculum_promotion"
     PROMOTION_EVAL = "promotion_eval"
     MILESTONE_EVAL = "milestone_eval"
+    DECK_MATRIX_EVAL = "deck_matrix_eval"
     CHECKPOINT_SAVED = "checkpoint_saved"
     LOG = "log"
 
@@ -35,6 +36,7 @@ ALL_TYPES = (
     EventType.CURRICULUM_PROMOTION,
     EventType.PROMOTION_EVAL,
     EventType.MILESTONE_EVAL,
+    EventType.DECK_MATRIX_EVAL,
     EventType.CHECKPOINT_SAVED,
     EventType.LOG,
 )

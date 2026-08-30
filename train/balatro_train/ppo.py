@@ -32,6 +32,7 @@ from balatro_train.config import (
     config_to_dict,
     load_config,
 )
+from balatro_train.deck_curriculum import deck_weights
 from balatro_train.encoding import N_ACTION_TYPES
 from balatro_train.env_api import make_vec_env
 from balatro_train.policy import BalatroPolicy, actions_to_numpy, obs_to_torch
@@ -70,6 +71,12 @@ def snapshot_fraction_at(step: int, cfg: SnapshotConfig) -> float:
     return float(cfg.fraction + t * (a.final_fraction - cfg.fraction))
 
 
+#: EMA smoothing for per-cohort win rate. 1/200 ~ a 200-episode half-life:
+#: responsive enough to show a deck improving, slow enough that a handful of
+#: episodes in a rare cohort does not swing the number.
+_COHORT_ALPHA = 1.0 / 200.0
+
+
 def shaping_beta_at(step: int, cfg: ShapingConfig) -> float:
     """The reward-shaping scale β at a global step (linear anneal).
 
@@ -95,7 +102,18 @@ class PPOTrainer:
             cfg.device if cfg.device != "cuda" or torch.cuda.is_available() else "cpu"
         )
 
-        self.env = make_vec_env(cfg.env.name, cfg.env.num_envs, **cfg.env.kwargs)
+        self.env = make_vec_env(
+            cfg.env.name, cfg.env.num_envs,
+            deck=cfg.env.deck, stake=cfg.env.stake, **cfg.env.kwargs,
+        )
+        # Per-episode deck/stake mixing (P7). Pushed only when a distribution
+        # is actually configured: an empty list means the env draws NOTHING
+        # extra from its seed stream, keeping single-config runs bit-identical
+        # to the pre-P7 env.
+        if cfg.env.deck_weights:
+            self.env.set_deck_distribution(list(cfg.env.deck_weights))
+        if cfg.env.stake_weights:
+            self.env.set_stake_distribution(list(cfg.env.stake_weights))
         self.policy = BalatroPolicy(cfg.policy).to(self.device)
         use_fused_adam = cfg.perf.fused_adam and self.device.type == "cuda"
         self.optimizer = torch.optim.Adam(
@@ -137,6 +155,13 @@ class PPOTrainer:
         self.ep_from_snapshot: deque[float] = deque(maxlen=100)
         self.ep_returns_by_src = {False: deque(maxlen=100), True: deque(maxlen=100)}
         self.ep_wins_by_src = {False: deque(maxlen=100), True: deque(maxlen=100)}
+        # Per-(deck, stake) win rate as an EMA rather than a window. With the
+        # full grid that is 120 cohorts sharing one episode stream, so a
+        # 100-episode deque per cell would be mostly empty and far too noisy
+        # to read; an EMA needs no backlog and degrades gracefully when a
+        # cohort is rare. `_COHORT_ALPHA` ~ a 200-episode half-life.
+        self.ep_wins_by_cohort: dict[tuple[int, int], float] = {}
+        self.ep_count_by_cohort: dict[tuple[int, int], int] = {}
         self.history: list[dict] = []  # per-iteration stats (tests consume this)
         self.action_counts = np.zeros(N_ACTION_TYPES, dtype=np.int64)
 
@@ -172,6 +197,7 @@ class PPOTrainer:
         self.obs, self.masks = self.env.reset(seeds)
         self._apply_snapshot_fraction()
         self._apply_shaping_beta()
+        self._apply_deck_curriculum()
 
         self.writer = None
         self.wandb = None
@@ -238,6 +264,23 @@ class PPOTrainer:
             self.env.set_shaping_beta(b)
             self.shaping_beta = b
         return b
+
+    def _apply_deck_curriculum(self) -> None:
+        """Push the tiered deck mixture for the current step (no-op when the
+        deck curriculum is disabled). Owns the deck distribution when on, so it
+        overrides any static env.deck_weights. Win rates come from the
+        per-cohort EMAs the rollout loop maintains, aggregated over whatever
+        stake cohorts exist for each deck; a deck with no history yet is
+        treated as win rate 0 (maximum priority), which is what a
+        just-unlocked deck should get."""
+        dc = self.cfg.deck_curriculum
+        if not dc.enabled:
+            return
+        by_deck: dict[int, list[float]] = {}
+        for (deck, _stake), wr in self.ep_wins_by_cohort.items():
+            by_deck.setdefault(deck, []).append(wr)
+        win_rates = {d: sum(v) / len(v) for d, v in by_deck.items()}
+        self.env.set_deck_distribution(deck_weights(self.global_step, dc, win_rates))
 
     # ---------------------------------------------------------------- rollout
 
@@ -408,7 +451,19 @@ class PPOTrainer:
                     src = bool(ep.get("from_snapshot", False))
                     self.ep_from_snapshot.append(float(src))
                     self.ep_returns_by_src[src].append(ep["r"])
-                    self.ep_wins_by_src[src].append(float(ep.get("won", False)))
+                    won = float(ep.get("won", False))
+                    self.ep_wins_by_src[src].append(won)
+                    # `.get` with the env's fixed value: a binding built before
+                    # P7 does not report these, and a stale module should not
+                    # take the trainer down.
+                    deck = int(ep.get("deck", self.cfg.env.deck))
+                    stake = int(ep.get("stake", self.cfg.env.stake))
+                    key = (deck, stake)
+                    prev = self.ep_wins_by_cohort.get(key)
+                    self.ep_wins_by_cohort[key] = (
+                        won if prev is None else prev + _COHORT_ALPHA * (won - prev)
+                    )
+                    self.ep_count_by_cohort[key] = self.ep_count_by_cohort.get(key, 0) + 1
                     emit(
                         EventType.EPISODE_END,
                         step=self.global_step,
@@ -417,6 +472,8 @@ class PPOTrainer:
                         ante=ep.get("ante", 0),
                         won=bool(ep.get("won", False)),
                         from_snapshot=src,
+                        deck=deck,
+                        stake=stake,
                     )
 
             stored_reward = self.ret_norm(reward, done) if self.ret_norm else reward
@@ -533,6 +590,7 @@ class PPOTrainer:
             self.iteration += 1
             self._apply_snapshot_fraction()
             self._apply_shaping_beta()
+            self._apply_deck_curriculum()
             self.collect()
             stats = self.update()
             stats["iteration"] = self.iteration
@@ -571,6 +629,19 @@ class PPOTrainer:
                         stats[f"ep_win_rate_{name}"] = float(
                             np.mean(self.ep_wins_by_src[src])
                         )
+            # Per-(deck, stake) win rate. Only emitted when more than one
+            # cohort has actually been played -- on a single-config run it
+            # would just restate ep_win_rate under a longer name. Keys are
+            # "deck:stake" strings because JSON object keys cannot be tuples.
+            if len(self.ep_wins_by_cohort) > 1:
+                stats["ep_win_rate_by_cohort"] = {
+                    f"{d}:{st}": round(v, 4)
+                    for (d, st), v in sorted(self.ep_wins_by_cohort.items())
+                }
+                stats["ep_count_by_cohort"] = {
+                    f"{d}:{st}": n
+                    for (d, st), n in sorted(self.ep_count_by_cohort.items())
+                }
             self.history.append(stats)
             self._log(stats)
             # Kept out of `stats` so the history/TensorBoard path stays scalars.
@@ -599,6 +670,17 @@ class PPOTrainer:
         return self.history
 
     def _log(self, stats: dict) -> None:
+        # Cohort win rates are a dict, not a scalar, so they ride the NDJSON
+        # stream via `stats` and are fanned out to TensorBoard here one series
+        # per played cohort -- never 120 empty series for cells nothing has
+        # touched.
+        if self.writer and "ep_win_rate_by_cohort" in stats:
+            for key, value in stats["ep_win_rate_by_cohort"].items():
+                deck, stake = key.split(":")
+                self.writer.add_scalar(
+                    f"cohort/win_rate_deck{deck}_stake{stake}", value, self.global_step
+                )
+
         if self.iteration % self.cfg.log.log_every_iters == 0:
             parts = [f"iter {stats['iteration']:4d}", f"step {stats['global_step']:>10d}",
                      f"sps {stats['sps']:>6d}"]
@@ -662,6 +744,40 @@ class PPOTrainer:
         )
         self.policy.train()
         return stats
+
+    def _run_deck_matrix_eval(self, episodes: int) -> dict:
+        """Argmax win rate per active deck at win_ante 8, on the held-out seed
+        block. Only the decks the curriculum has unlocked are evaluated, so the
+        cost tracks the live grid rather than all 15 from step 0.
+
+        Each deck gets a fresh eval env (SimBalatroEnv takes a deck kwarg), so
+        training env state is untouched -- same guarantee as _run_eval. Returns
+        {deck_index: win_rate}.
+        """
+        from balatro_train.deck_curriculum import active_decks
+        from balatro_train.eval import evaluate
+
+        dc = self.cfg.deck_curriculum
+        decks = active_decks(self.global_step, dc) if dc.enabled else [self.cfg.env.deck]
+        cur = self.cfg.curriculum
+        out: dict[int, float] = {}
+        for d in decks:
+            env_kwargs = dict(self.cfg.env.kwargs)
+            env_kwargs["win_ante"] = 8
+            env_kwargs["deck"] = d
+            stats = evaluate(
+                self.policy,
+                env_name=self.cfg.env.name,
+                num_envs=cur.eval_num_envs,
+                episodes=episodes,
+                deterministic=True,
+                seed_base=cur.eval_seed_base,
+                device=self.device,
+                env_kwargs=env_kwargs,
+            )
+            out[d] = stats["win_rate"]
+        self.policy.train()
+        return out
 
     def _curriculum_step(self) -> None:
         """Periodic promotion eval (cheap) + full-game milestone eval."""
@@ -756,6 +872,24 @@ class PPOTrainer:
                 **stats,
             )
 
+            # Per-deck grid, at the milestone cadence and only when the deck
+            # curriculum is live (otherwise it just restates the single-deck
+            # milestone above). Keys are "deck" strings for JSON.
+            if self.cfg.deck_curriculum.enabled:
+                t1 = time.time()
+                matrix = self._run_deck_matrix_eval(cur.milestone_episodes)
+                if self.writer:
+                    for d, wr in matrix.items():
+                        self.writer.add_scalar(f"deck_matrix/win_rate_deck{d}", wr,
+                                               self.global_step)
+                emit(
+                    EventType.DECK_MATRIX_EVAL,
+                    step=self.global_step,
+                    episodes=cur.milestone_episodes,
+                    elapsed=time.time() - t1,
+                    win_rate_by_deck={str(d): round(wr, 4) for d, wr in matrix.items()},
+                )
+
     # ------------------------------------------------------------ checkpoints
 
     def save_checkpoint(self, path: str | Path | None = None) -> Path:
@@ -809,6 +943,7 @@ class PPOTrainer:
         # Snapshot fraction follows the restored global step's schedule.
         self._apply_snapshot_fraction()
         self._apply_shaping_beta()
+        self._apply_deck_curriculum()
         # The lr ramp is the one schedule that is not a pure function of
         # global_step: extending total_timesteps to buy more training also
         # rescales it, so a resume can silently jump lr by orders of

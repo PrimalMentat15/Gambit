@@ -480,7 +480,10 @@ class MockBalatroEnv:
     """`env_api.VecEnv` reference implementation (see module docstring)."""
 
     def __init__(self, num_envs: int, reward_mode: str = "shaped", bandit_episode_len: int = 32,
-                 win_ante: int = 8):
+                 win_ante: int = 8,
+        deck: int = 0,
+        stake: int = 1,
+    ):
         if reward_mode not in ("shaped", "bandit"):
             raise ValueError(f"unknown reward_mode {reward_mode!r}")
         if not 1 <= win_ante <= 8:
@@ -490,6 +493,10 @@ class MockBalatroEnv:
         self._bandit_episode_len = bandit_episode_len
         self._win_ante = win_ante
         self._beta = 1.0
+        # The mock always simulates Red/White; these exist so it satisfies the
+        # same protocol the sim env does.
+        self._deck = int(deck)
+        self._stake = int(stake)
         self._games: list[_Game] | None = None
         self._last_masks: dict[str, np.ndarray] | None = None
         self._pool_antes: np.ndarray | None = None
@@ -510,6 +517,50 @@ class MockBalatroEnv:
         self._win_ante = int(win_ante)
         for game in self._games or []:
             game.pending_win_ante = self._win_ante
+
+    # --- deck / stake (P7) --------------------------------------------------
+    # The mock only ever simulates Red Deck / White Stake, but it must accept
+    # and report these or it stops being a valid stand-in for the sim env in
+    # contract tests -- the point of the mock is that anything written against
+    # the protocol runs unchanged on both.
+
+    @property
+    def deck(self) -> int:
+        return self._deck
+
+    @property
+    def stake(self) -> int:
+        return self._stake
+
+    def set_deck(self, deck: int) -> None:
+        if not 0 <= deck < E.N_DECKS:
+            raise ValueError(f"deck must be in 0..{E.N_DECKS - 1}, got {deck}")
+        self._deck = int(deck)
+
+    def set_stake(self, stake: int) -> None:
+        if not 1 <= stake <= E.N_STAKES:
+            raise ValueError(f"stake must be in 1..={E.N_STAKES}, got {stake}")
+        self._stake = int(stake)
+
+    def set_deck_distribution(self, weights) -> None:
+        self._validate_weights(weights, E.N_DECKS, "deck")
+
+    def set_stake_distribution(self, weights) -> None:
+        self._validate_weights(weights, E.N_STAKES, "stake")
+
+    @staticmethod
+    def _validate_weights(weights, n: int, what: str) -> None:
+        """Reject exactly what the Rust side rejects, so a bad distribution
+        fails the same way on both envs."""
+        weights = list(weights)
+        if not weights:
+            return
+        if len(weights) != n:
+            raise ValueError(f"expected {n} {what} weights, got {len(weights)}")
+        if any(not np.isfinite(w) or w < 0 for w in weights):
+            raise ValueError(f"{what} weights must be finite and non-negative")
+        if sum(weights) <= 0:
+            raise ValueError(f"{what} weights sum to zero")
 
     def load_snapshot_pool(self, path: str) -> int:
         """Mock parity for the sim's pool loading: reads the pool file's

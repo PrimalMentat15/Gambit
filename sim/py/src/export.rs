@@ -10,8 +10,8 @@
 //! (`legal_actions_json`, `apply_action`, `bot_direct_action`) — P5 drives
 //! the sim through these instead of the RL obs/action encoding.
 
-use balatro_core::config::{Deck, Stake};
 use balatro_core::cards::{Card, Edition, Enhancement, HandType, Seal};
+use balatro_core::config::{Deck, Stake};
 use balatro_core::items::{consumable_by_key, tag_by_key};
 use balatro_core::run::{Action, BlindStage, Run, State};
 use balatro_core::shop::{OwnedConsumable, OwnedJoker, PackItem, PackReturn, ShopItemKind};

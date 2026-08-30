@@ -111,48 +111,18 @@ pub const F_GLOBAL: usize = 64;
 pub const N_DECKS: usize = 15;
 pub const N_STAKES: usize = 8;
 
-/// `encoding.Deck` order — the `order` field of the `b_*` prototypes in
-/// game.lua:628-642, zero-based. `b_challenge` carries `omit = true` and is
-/// not represented.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Deck {
-    Red = 0,
-    Blue = 1,
-    Yellow = 2,
-    Green = 3,
-    Black = 4,
-    Magic = 5,
-    Nebula = 6,
-    Ghost = 7,
-    Abandoned = 8,
-    Checkered = 9,
-    Zodiac = 10,
-    Painted = 11,
-    Anaglyph = 12,
-    Plasma = 13,
-    Erratic = 14,
-}
+/// Deck and Stake are NOT redefined here.
+///
+/// `balatro_core::config` already owns them, and their discriminants are the
+/// wire format shared with `encoding.py`. Mirroring the enums in this file too
+/// would create a second copy that has to be kept in sync by hand — the exact
+/// drift this module's header warns about. Re-exported instead, so there is
+/// one definition and `run.deck_kind()` needs no conversion at the boundary.
+pub use balatro_core::config::{Deck, Stake};
 
-/// `encoding.Stake` order — the `stake_level` field from game.lua:253-260.
-/// ONE-BASED, matching `G.GAME.stake`, because every modifier is a `>=` test
-/// against that number (game.lua:2031-2041).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stake {
-    White = 1,
-    Red = 2,
-    Green = 3,
-    Black = 4,
-    Blue = 5,
-    Purple = 6,
-    Orange = 7,
-    Gold = 8,
-}
-
-impl Stake {
-    /// The `GLOBAL_STAKE` feature: `(stake_level - 1) / 7.0`, in `[0, 1]`.
-    pub fn ordinal_feature(self) -> f32 {
-        (self as usize - 1) as f32 / (N_STAKES - 1) as f32
-    }
+/// The `GLOBAL_STAKE` feature: `(stake_level - 1) / 7.0`, in `[0, 1]`.
+pub fn stake_ordinal(s: Stake) -> f32 {
+    (s.level() as usize - 1) as f32 / (N_STAKES - 1) as f32
 }
 
 // ---------------------------------------------------------- deck composition

@@ -5,7 +5,7 @@
 use balatro_sim::action::ActionRow;
 use balatro_sim::consts::*;
 use balatro_sim::encode::{EnvMasks, EnvObs};
-use balatro_sim::env::{seed_string, splitmix64, EnvSlot};
+use balatro_sim::env::{seed_string, splitmix64, ConfigDist, EnvSlot};
 
 /// Tiny deterministic RNG for the random agent.
 struct Rng(u64);
@@ -490,7 +490,15 @@ fn snapshot_mixing_fraction_1_starts_from_pool_and_is_deterministic() {
         for _ in 0..6000 {
             let row = random_masked_action(&slot.masks, &mut rng);
             let (r, done, info) = slot
-                .step_with_pool(0, &row, 1.0, true, Some(&pool), fraction)
+                .step_with_pool(
+                    0,
+                    &row,
+                    1.0,
+                    true,
+                    Some(&pool),
+                    fraction,
+                    &ConfigDist::default(),
+                )
                 .unwrap();
             hash.extend_from_slice(&r.to_le_bytes());
             hash.push(done as u8);
@@ -559,7 +567,7 @@ fn snapshot_mixing_respects_win_ante_and_redeterminizes() {
     for _ in 0..6000 {
         let row = random_masked_action(&slot.masks, &mut rng);
         let (_r, done, info) = slot
-            .step_with_pool(0, &row, 1.0, true, Some(&pool), 1.0)
+            .step_with_pool(0, &row, 1.0, true, Some(&pool), 1.0, &ConfigDist::default())
             .unwrap();
         if done {
             episodes += 1;
@@ -580,7 +588,7 @@ fn snapshot_mixing_respects_win_ante_and_redeterminizes() {
         for _ in 0..8000 {
             let row = random_masked_action(&slot.masks, &mut rng);
             let (_r, done, info) = slot
-                .step_with_pool(0, &row, 1.0, true, Some(&pool), 1.0)
+                .step_with_pool(0, &row, 1.0, true, Some(&pool), 1.0, &ConfigDist::default())
                 .unwrap();
             if done {
                 let ep = info.unwrap();
@@ -667,4 +675,139 @@ fn aura_and_every_usable_consumable_legalizes() {
         let row = random_masked_action(&slot.masks, &mut rng);
         slot.step(0, &row, 1.0, true).unwrap();
     }
+}
+
+// ------------------------------------------------------------- deck / stake
+
+/// The guarantee everything else rests on: with no distribution configured,
+/// the reset path must consume the seed stream exactly as it did pre-P7.
+/// If this breaks, every existing seed maps to a different run.
+#[test]
+fn no_distribution_draws_nothing_extra() {
+    use balatro_core::config::{Deck, RunConfig, Stake};
+    use balatro_sim::env::ConfigDist;
+
+    let empty = ConfigDist::default();
+    assert!(empty.is_empty());
+
+    // Same seed, once through the plain constructor and once through the
+    // dist-aware one with an empty dist: identical run seeds, and identical
+    // seeds for every following episode.
+    let mut a = EnvSlot::with_win_ante(4242, 8);
+    let mut b = EnvSlot::with_config_dist(4242, 8, RunConfig::default(), &empty);
+    for _ in 0..8 {
+        assert_eq!(a.run.seed(), b.run.seed());
+        a.begin_episode(None, 0.0, &empty);
+        b.begin_episode(None, 0.0, &empty);
+    }
+    assert_eq!(a.run.deck_kind(), Deck::Red);
+    assert_eq!(a.run.stake(), Stake::White);
+}
+
+/// A configured deck reaches the run, the observation and the episode info.
+#[test]
+fn fixed_deck_and_stake_reach_the_run() {
+    use balatro_core::config::{Deck, RunConfig, Stake};
+    use balatro_sim::consts::{GLOBAL_DECK_OFF, GLOBAL_STAKE, N_DECKS};
+
+    for (deck, stake) in [
+        (Deck::Red, Stake::White),
+        (Deck::Plasma, Stake::Gold),
+        (Deck::Erratic, Stake::Purple),
+    ] {
+        let cfg = RunConfig::new(deck, stake);
+        let slot = EnvSlot::with_config(7, 8, cfg);
+        assert_eq!(slot.run.deck_kind(), deck);
+        assert_eq!(slot.run.stake(), stake);
+
+        let o = slot.observe();
+        let block = &o.global[GLOBAL_DECK_OFF..GLOBAL_DECK_OFF + N_DECKS];
+        assert_eq!(onehot_sum(block), 1.0, "{deck:?} one-hot");
+        assert_eq!(block[deck as usize], 1.0, "{deck:?} wrong index set");
+        let want = (stake.level() as f32 - 1.0) / 7.0;
+        assert!(
+            (o.global[GLOBAL_STAKE] - want).abs() < 1e-6,
+            "{stake:?} ordinal"
+        );
+    }
+}
+
+/// A distribution is sampled per episode, is reproducible from the seed, and
+/// only ever produces decks with non-zero weight.
+#[test]
+fn deck_distribution_samples_reproducibly() {
+    use balatro_core::config::{Deck, RunConfig};
+    use balatro_sim::env::ConfigDist;
+    use std::collections::HashSet;
+
+    // Only Blue and Plasma are eligible.
+    let mut weights = vec![0.0; 15];
+    weights[Deck::Blue as usize] = 1.0;
+    weights[Deck::Plasma as usize] = 3.0;
+    let dist = ConfigDist {
+        deck_cdf: Some(ConfigDist::cdf(&Deck::ALL, &weights).unwrap()),
+        stake_cdf: None,
+    };
+
+    let run_decks = |seed: i64| {
+        let mut slot = EnvSlot::with_config_dist(seed, 8, RunConfig::default(), &dist);
+        let mut seen = Vec::new();
+        for _ in 0..40 {
+            seen.push(slot.run.deck_kind());
+            slot.begin_episode(None, 0.0, &dist);
+        }
+        seen
+    };
+
+    let a = run_decks(99);
+    let b = run_decks(99);
+    assert_eq!(a, b, "same seed must replay the same deck sequence");
+
+    let unique: HashSet<_> = a.iter().copied().collect();
+    assert!(
+        unique
+            .iter()
+            .all(|d| matches!(d, Deck::Blue | Deck::Plasma)),
+        "zero-weight deck drawn: {unique:?}"
+    );
+    assert!(unique.len() > 1, "distribution never varied: {unique:?}");
+
+    // Different seeds diverge.
+    assert_ne!(a, run_decks(100));
+}
+
+#[test]
+fn cdf_rejects_bad_weights() {
+    use balatro_core::config::Deck;
+    use balatro_sim::env::ConfigDist;
+
+    assert!(
+        ConfigDist::cdf(&Deck::ALL, &[1.0; 14]).is_err(),
+        "wrong length"
+    );
+    assert!(ConfigDist::cdf(&Deck::ALL, &[0.0; 15]).is_err(), "all zero");
+    let mut neg = vec![1.0; 15];
+    neg[3] = -1.0;
+    assert!(ConfigDist::cdf(&Deck::ALL, &neg).is_err(), "negative");
+    let mut nan = vec![1.0; 15];
+    nan[3] = f64::NAN;
+    assert!(ConfigDist::cdf(&Deck::ALL, &nan).is_err(), "nan");
+    assert!(ConfigDist::cdf(&Deck::ALL, &[1.0; 15]).is_ok());
+}
+
+/// A snapshot carries its own deck/stake; restoring must not resample, or the
+/// observation's one-hot would contradict the restored run.
+#[test]
+fn snapshot_roundtrip_preserves_deck_and_stake() {
+    use balatro_core::config::{Deck, RunConfig, Stake};
+
+    let src = EnvSlot::with_config(11, 8, RunConfig::new(Deck::Zodiac, Stake::Orange));
+    let bytes = src.snapshot_bytes();
+
+    let mut dst = EnvSlot::with_config(12, 8, RunConfig::new(Deck::Red, Stake::White));
+    dst.restore_bytes(&bytes).expect("restore");
+    assert_eq!(dst.run.deck_kind(), Deck::Zodiac);
+    assert_eq!(dst.run.stake(), Stake::Orange);
+    assert_eq!(dst.config.deck, Deck::Zodiac);
+    assert_eq!(dst.config.stake, Stake::Orange);
 }

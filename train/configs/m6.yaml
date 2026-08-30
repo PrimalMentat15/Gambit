@@ -36,15 +36,11 @@ policy:
   value_hidden: 256
 
 ppo:
-  # 1.5B more steps on top of the resumed 3.50B. At ~7,300 steps/s that is
-  # roughly 2.5 days.
   total_timesteps: 5000000000
   rollout_len: 128
-
   # Hand-tuned, NOT probed. auto_minibatch optimises for whether an update
   # *fits* in VRAM, not whether it runs fast; on this 6GB card it picks a value
   # that costs an 8x throughput collapse (README, "Tuning throughput").
-  # m5.yaml's 32768 is sized for the 2x5090 box and must not be copied here.
   minibatch_size: 4096
 
   # 2, not m4's 4. The m5e2 A/B picked 2, and it is the better fit for a
@@ -78,14 +74,15 @@ perf:
   bf16_update: true
   compile: true
   buffer_device: auto
-  pin_memory: true
   auto_minibatch: false
   fused_adam: true
+  # Pinned (page-locked) staging pages cannot be swapped out, so they are a
+  # hard claim on physical RAM. With headroom this thin that is the wrong
+  # trade: losing a multi-day run costs far more than the H2D speedup. Turn
+  # back on if free physical memory is comfortable.
+  pin_memory: false
 
 curriculum:
-  # Already on the top rung, so this is a periodic held-out measurement, not a
-  # ladder -- a one-entry ladder says so, and makes promotion structurally
-  # impossible rather than merely unreached.
   enabled: true
   start_ante: 8
   ladder: [8]

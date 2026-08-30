@@ -180,6 +180,22 @@ class VecEnv(Protocol):
         """Set the curriculum win ante (applies at next reset per env)."""
         ...
 
+    def set_deck(self, deck: int) -> None:
+        """Deck index every env resets to (applies at next reset per env)."""
+        ...
+
+    def set_stake(self, stake: int) -> None:
+        """Stake level every env resets to, one-based (1 = White)."""
+        ...
+
+    def set_deck_distribution(self, weights: Sequence[float]) -> None:
+        """Per-episode deck sampling; empty list = fixed deck, no draws."""
+        ...
+
+    def set_stake_distribution(self, weights: Sequence[float]) -> None:
+        """Per-episode stake sampling; empty list = fixed stake, no draws."""
+        ...
+
     def load_snapshot_pool(self, path: str) -> int:
         """Load a packed snapshot start-state pool file; returns its size."""
         ...

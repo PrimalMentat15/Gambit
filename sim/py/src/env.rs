@@ -10,6 +10,7 @@
 //! any sim episode live. Auto-reset draws the next seed from the same
 //! stream, keeping the whole trajectory a pure function of `seeds[i]`.
 
+use balatro_core::config::{Deck, RunConfig, Stake};
 use balatro_core::run::{Run, State};
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +48,70 @@ pub struct Episode {
     /// True when the episode STARTED from a sampled pool snapshot (M3
     /// start-state mixing) rather than a fresh seeded run.
     pub from_snapshot: bool,
+    /// The deck/stake this episode was actually played on. Reported per
+    /// episode rather than read off the env, because a distribution can
+    /// change what the NEXT episode uses before the trainer reads this one.
+    pub deck: Deck,
+    pub stake: Stake,
+}
+
+/// Per-episode deck/stake sampling for a vec env.
+///
+/// `None` on an axis means "use the env's fixed value and draw NOTHING".
+/// That is load-bearing: with no distribution set, `begin_episode` consumes
+/// exactly as many numbers from the seed stream as it did before P7, so
+/// single-config runs stay bit-identical to the pre-P7 env — the same
+/// guarantee snapshot mixing already makes for `fraction == 0.0`.
+#[derive(Debug, Clone, Default)]
+pub struct ConfigDist {
+    /// Cumulative weights, ascending, last == 1.0.
+    pub deck_cdf: Option<Vec<(Deck, f64)>>,
+    pub stake_cdf: Option<Vec<(Stake, f64)>>,
+}
+
+impl ConfigDist {
+    pub fn is_empty(&self) -> bool {
+        self.deck_cdf.is_none() && self.stake_cdf.is_none()
+    }
+
+    /// Build a CDF from non-negative weights. Zero-weight entries are kept
+    /// (they simply never get drawn); an all-zero or empty list is rejected.
+    pub fn cdf<T: Copy>(items: &[T], weights: &[f64]) -> Result<Vec<(T, f64)>, String> {
+        if items.len() != weights.len() {
+            return Err(format!(
+                "expected {} weights, got {}",
+                items.len(),
+                weights.len()
+            ));
+        }
+        if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
+            return Err("weights must be finite and non-negative".into());
+        }
+        let total: f64 = weights.iter().sum();
+        if total <= 0.0 {
+            return Err("weights sum to zero".into());
+        }
+        let mut acc = 0.0;
+        let mut out = Vec::with_capacity(items.len());
+        for (i, w) in weights.iter().enumerate() {
+            acc += w / total;
+            out.push((items[i], acc));
+        }
+        // Guard against float drift leaving the last bound below a drawn u.
+        if let Some(last) = out.last_mut() {
+            last.1 = 1.0;
+        }
+        Ok(out)
+    }
+}
+
+fn pick<T: Copy>(cdf: &[(T, f64)], u: f64) -> T {
+    for (item, bound) in cdf {
+        if u < *bound {
+            return *item;
+        }
+    }
+    cdf[cdf.len() - 1].0
 }
 
 /// Snapshot payload: the full run plus the episode bookkeeping and the
@@ -59,6 +124,10 @@ pub struct Snapshot {
     pub seed_stream: u64,
     /// Curriculum win ante of the snapshotted episode.
     pub win_ante: u8,
+    /// Deck/stake the snapshotted episode was played on. A restored run must
+    /// keep its own config -- the observation's deck one-hot comes from the
+    /// `Run`, so resampling here would make the two disagree.
+    pub config: RunConfig,
 }
 
 pub struct EnvSlot {
@@ -73,6 +142,13 @@ pub struct EnvSlot {
     /// `set_win_ante` writes here; `win_ante` picks it up at the next
     /// (auto-)reset so an in-flight episode keeps its goalpost.
     pub pending_win_ante: u8,
+    /// Deck/stake of the CURRENT episode. Mirrors `self.run.config()`; kept
+    /// here so `Episode` can report it after the run has been replaced.
+    pub config: RunConfig,
+    /// Scheduled deck/stake, applied at the next (auto-)reset — same
+    /// contract as `pending_win_ante`, so an in-flight episode never has its
+    /// rules changed underneath it.
+    pub pending_config: RunConfig,
     /// Shop-slot mapping as of the LAST emitted observation (what the
     /// agent's shop_target indexes refer to).
     pub shop_slots: Vec<ShopSlotRef>,
@@ -88,15 +164,39 @@ impl EnvSlot {
     }
 
     pub fn with_win_ante(seed: i64, win_ante: u8) -> Self {
+        Self::with_config(seed, win_ante, RunConfig::default())
+    }
+
+    pub fn with_config(seed: i64, win_ante: u8, config: RunConfig) -> Self {
+        Self::with_config_dist(seed, win_ante, config, &ConfigDist::default())
+    }
+
+    /// Build a slot, sampling deck/stake from `dist` exactly the way
+    /// `fresh_episode` does — same draw order, same "draw nothing when the
+    /// axis is unset" rule. Without this an explicit `reset()` would pin
+    /// every env's FIRST episode to the fixed config while auto-resets
+    /// sampled, quietly skewing the mixture at the start of every run.
+    pub fn with_config_dist(seed: i64, win_ante: u8, config: RunConfig, dist: &ConfigDist) -> Self {
         let mut stream = seed as u64;
         let run_seed = seed_string(splitmix64(&mut stream));
+        let mut config = config;
+        if let Some(cdf) = &dist.deck_cdf {
+            let u = (splitmix64(&mut stream) >> 11) as f64 / (1u64 << 53) as f64;
+            config.deck = pick(cdf, u);
+        }
+        if let Some(cdf) = &dist.stake_cdf {
+            let u = (splitmix64(&mut stream) >> 11) as f64 / (1u64 << 53) as f64;
+            config.stake = pick(cdf, u);
+        }
         let mut slot = EnvSlot {
-            run: Run::new(&run_seed),
+            run: Run::with_config(&run_seed, config),
             seed_stream: stream,
             ep_return: 0.0,
             ep_len: 0,
             win_ante,
             pending_win_ante: win_ante,
+            config,
+            pending_config: config,
             shop_slots: Vec::new(),
             masks: EnvMasks::default(),
             from_snapshot: false,
@@ -109,6 +209,11 @@ impl EnvSlot {
     /// (auto-)reset of this env — the current episode is unaffected.
     pub fn set_win_ante(&mut self, win_ante: u8) {
         self.pending_win_ante = win_ante;
+    }
+
+    /// Schedule a new deck/stake; takes effect at the next (auto-)reset.
+    pub fn set_config(&mut self, config: RunConfig) {
+        self.pending_config = config;
     }
 
     /// Curriculum win: the real win flag, or the boss of `win_ante` was
@@ -130,9 +235,35 @@ impl EnvSlot {
         encode_obs(&self.run)
     }
 
-    fn fresh_episode(&mut self) {
+    /// Start a fresh seeded episode, applying the scheduled deck/stake.
+    ///
+    /// # Draw order (documented scheme)
+    /// The run seed is drawn FIRST, then the deck, then the stake — and the
+    /// deck/stake draws happen only when a distribution is configured for
+    /// that axis. So with no distribution the stream advances exactly as it
+    /// did pre-P7, and even with one the run-seed sequence is untouched,
+    /// which keeps seeds comparable across mixture settings.
+    ///
+    /// # win_ante is deliberately NOT copied into the RunConfig
+    /// `EnvSlot::win_ante` is the curriculum goalpost — it decides when the
+    /// episode ENDS. `RunConfig::win_ante` feeds `get_new_boss`, which gates
+    /// showdown bosses on `ante == win_ante`, so writing the curriculum's
+    /// value into it would change the boss pool (and therefore the RNG
+    /// stream) on every rung below 8. The two stay separate: the config
+    /// keeps the real game's 8 unless a caller sets it explicitly.
+    fn fresh_episode(&mut self, dist: &ConfigDist) {
         let run_seed = seed_string(splitmix64(&mut self.seed_stream));
-        self.run = Run::new(&run_seed);
+        let mut config = self.pending_config;
+        if let Some(cdf) = &dist.deck_cdf {
+            let u = (splitmix64(&mut self.seed_stream) >> 11) as f64 / (1u64 << 53) as f64;
+            config.deck = pick(cdf, u);
+        }
+        if let Some(cdf) = &dist.stake_cdf {
+            let u = (splitmix64(&mut self.seed_stream) >> 11) as f64 / (1u64 << 53) as f64;
+            config.stake = pick(cdf, u);
+        }
+        self.run = Run::with_config(&run_seed, config);
+        self.config = config;
         self.ep_return = 0.0;
         self.ep_len = 0;
         self.win_ante = self.pending_win_ante;
@@ -167,7 +298,7 @@ impl EnvSlot {
     /// generator's exact future). Episode bookkeeping restarts
     /// (`ep_return = 0`, `ep_len = 0`), the env keeps its OWN seed stream
     /// and curriculum goalpost — the snapshot's are ignored.
-    fn begin_episode(&mut self, pool: Option<&SnapshotPool>, fraction: f64) {
+    pub fn begin_episode(&mut self, pool: Option<&SnapshotPool>, fraction: f64, dist: &ConfigDist) {
         if let Some(pool) = pool {
             if fraction > 0.0 {
                 let u = (splitmix64(&mut self.seed_stream) >> 11) as f64 / (1u64 << 53) as f64;
@@ -181,6 +312,12 @@ impl EnvSlot {
                             bincode::deserialize(pool.get(idx)).expect("validated pool entry");
                         self.run = snap.run;
                         self.run.redeterminize(&seed_string(redet));
+                        // The snapshot's deck/stake win: the observation's
+                        // deck one-hot is encoded from the `Run`, so
+                        // overriding here would make the two disagree. A
+                        // mixture therefore needs per-deck pool coverage, not
+                        // resampling.
+                        self.config = self.run.config();
                         self.ep_return = 0.0;
                         self.ep_len = 0;
                         self.win_ante = self.pending_win_ante;
@@ -190,7 +327,7 @@ impl EnvSlot {
                 }
             }
         }
-        self.fresh_episode();
+        self.fresh_episode(dist);
     }
 
     /// Apply one composite action; auto-reset on episode end (fresh-seed
@@ -203,7 +340,15 @@ impl EnvSlot {
         beta: f64,
         strict: bool,
     ) -> Result<(f32, bool, Option<Episode>), String> {
-        self.step_with_pool(env_idx, row, beta, strict, None, 0.0)
+        self.step_with_pool(
+            env_idx,
+            row,
+            beta,
+            strict,
+            None,
+            0.0,
+            &ConfigDist::default(),
+        )
     }
 
     /// `step` with snapshot start-state mixing on auto-reset (see
@@ -216,6 +361,7 @@ impl EnvSlot {
         strict: bool,
         pool: Option<&SnapshotPool>,
         snapshot_fraction: f64,
+        dist: &ConfigDist,
     ) -> Result<(f32, bool, Option<Episode>), String> {
         if strict {
             validate(env_idx, row, &self.masks)?;
@@ -249,8 +395,12 @@ impl EnvSlot {
                 ante: self.run.ante(),
                 won,
                 from_snapshot: self.from_snapshot,
+                // Read BEFORE begin_episode replaces the run: this describes
+                // the episode that just ended, not the one starting.
+                deck: self.config.deck,
+                stake: self.config.stake,
             });
-            self.begin_episode(pool, snapshot_fraction);
+            self.begin_episode(pool, snapshot_fraction, dist);
             self.shop_slots = shop_slot_map(&self.run);
         }
         self.masks = encode_masks(&self.run, &self.shop_slots);
@@ -264,6 +414,7 @@ impl EnvSlot {
             ep_len: self.ep_len,
             seed_stream: self.seed_stream,
             win_ante: self.win_ante,
+            config: self.config,
         };
         bincode::serialize(&snap).expect("snapshot serialize")
     }
@@ -280,6 +431,9 @@ impl EnvSlot {
         // property of how the episode was STARTED, not stored in the
         // snapshot) are left as-is.
         self.win_ante = snap.win_ante;
+        // Same reasoning as the pool branch of `begin_episode`: the run
+        // carries its own deck/stake and the observation is encoded from it.
+        self.config = snap.config;
         self.refresh();
         Ok(())
     }

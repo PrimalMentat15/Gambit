@@ -46,7 +46,7 @@ end
 -- Game speed. The vanilla settings UI caps G.SETTINGS.GAMESPEED at 4, but
 -- the engine takes any multiplier (balatrobot boots it from --gamespeed,
 -- default 4 — these buttons override it live for the session).
-for _, n in ipairs({ 4, 8, 16 }) do
+for _, n in ipairs({ 8, 16, 32 }) do
     G.FUNCS["botrun_speed_" .. n] = function(e)
         G.SETTINGS.GAMESPEED = n
         play_sound("button")

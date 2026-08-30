@@ -193,10 +193,15 @@ def test_rust_mirror_matches_encoding():
 
 
 def test_deck_and_stake_enums_match_rust():
-    """Deck/Stake discriminants are a frozen wire ordering, mirrored in Rust."""
-    rust_path = pathlib.Path(__file__).resolve().parents[2] / "sim" / "py" / "src" / "consts.rs"
+    """Deck/Stake discriminants are a frozen wire ordering, mirrored in Rust.
+
+    The enums live in `sim/core/src/config.rs`, NOT in consts.rs -- consts.rs
+    re-exports them so there is exactly one definition to keep in sync with
+    this file.
+    """
+    rust_path = pathlib.Path(__file__).resolve().parents[2] / "sim" / "core" / "src" / "config.rs"
     if not rust_path.is_file():
-        pytest.skip("Rust mirror not present")
+        pytest.skip("Rust config not present")
     rust = rust_path.read_text(encoding="utf-8")
 
     for enum_name, py_enum in (("Deck", E.Deck), ("Stake", E.Stake)):

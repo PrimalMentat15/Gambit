@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
+
+from balatro_train.deck_curriculum import DeckCurriculumConfig
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,19 @@ class EnvConfig:
     seed: int = 0                 # base seed; env i resets from seed + i
     kwargs: dict = field(default_factory=dict)  # extra env ctor kwargs
     # (e.g. reward_mode: bandit for the mock)
+
+    # --- deck / stake (P7) --------------------------------------------------
+    # Fixed configuration every env resets to. `deck` is an index in
+    # `encoding.Deck` order (0 = Red); `stake` is ONE-BASED (1 = White ..
+    # 8 = Gold), matching G.GAME.stake and the Stake discriminants.
+    deck: int = 0
+    stake: int = 1
+    # Per-episode sampling. Empty list = use the fixed value above and draw
+    # NOTHING from the seed stream, which keeps single-config runs
+    # bit-identical to the pre-P7 env. 15 weights for decks, 8 for stakes;
+    # they need not sum to 1.
+    deck_weights: list = field(default_factory=list)
+    stake_weights: list = field(default_factory=list)
 
 
 @dataclass
@@ -193,6 +208,7 @@ class TrainConfig:
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     snapshots: SnapshotConfig = field(default_factory=SnapshotConfig)
     shaping: ShapingConfig = field(default_factory=ShapingConfig)
+    deck_curriculum: DeckCurriculumConfig = field(default_factory=DeckCurriculumConfig)
     perf: PerfConfig = field(default_factory=PerfConfig)
     log: LogConfig = field(default_factory=LogConfig)
     seed: int = 1                 # torch/python RNG seed for training
@@ -226,6 +242,7 @@ _DATACLASS_FIELDS = {
     "ShapingAnnealConfig": ShapingAnnealConfig,
     "PerfConfig": PerfConfig,
     "LogConfig": LogConfig,
+    "DeckCurriculumConfig": DeckCurriculumConfig,
 }
 
 

@@ -1125,3 +1125,109 @@ invariant — and even that can only be asserted below ~2^53, because past there
 an f64 is no longer an exact integer and `%` against a power of ten returns
 noise. The implementation is faithful up there regardless: it uses `lua_fmod`
 exactly as Lua does, and Lua numbers are the same f64.
+
+---
+
+## Phase 7 Stage 2 — Stake stickers (eternal / perishable / rental)
+
+**Decision:** model the three shop-joker stickers that Black (4), Orange (7)
+and Gold (8) stakes enable, plus their per-round consequences.
+
+**The RNG was already correct, which made this cheap.** The
+eternal/perishable poll (`etperpoll`/`packetper`) was being drawn and discarded
+in `create_joker` since P3b -- so capturing its value instead of throwing it
+away shifts no stream and invalidates no frozen White-Stake vector. The rental
+poll (`ssjr`/`packssjr`) is the only new draw, and in the game Lua it sits
+INSIDE the `if enable_rentals_in_shop and pseudorandom(...)` short-circuit, so
+it is drawn only at Gold Stake. Below Gold nothing new is drawn and the edition
+poll that follows sits at exactly its pre-P7 position. `only_gold_stake_draws_
+the_rental_stream` pins that Orange and White produce the identical sequence of
+shop jokers.
+
+**Two ordering subtleties that a naive port gets wrong:**
+
+1. **The perishable debuff is permanent, and the sim already had a pass that
+   would clear it.** On a won round the sim clears every joker debuff
+   (`set_joker_debuffed(i, false)` for all) -- the model for boss debuffs like
+   Crimson Heart ending with the round. A perished joker (perishable, tally
+   exhausted) must survive that. The faithful fix mirrors `Card:set_debuff`
+   (card.lua:526-533): a `set_debuff(false)` on a perished joker hits the
+   perishable branch first and returns, so it can never be revived. Adding that
+   one guard to `set_joker_debuffed` makes the round-end pass respect it for
+   free -- no special-casing at the call site.
+
+2. **Rental drains before interest, and the drain compounds through it.** The
+   Lua drains rental in the joker loop at the TOP of end_round, before
+   `evaluate_round` computes interest -- so a drained dollar is a dollar
+   interest never sees. The visible consequence surprised the test: three
+   rounds of a $3 rental cost 13 dollars against an identical run, not 9,
+   because the rented run keeps less money and so earns less interest each
+   round. That is correct, not a bug; `rental_drain_compounds_through_interest`
+   pins it, and the exact-amount test uses the Green Deck (`no_interest`) to
+   remove the compounding and assert the raw 3 x RENTAL_RATE.
+
+**A fidelity gap the sticker work surfaced:** a rental joker's cost is forced
+to 1 (card.lua:381), so it sells for exactly $1 regardless of base price. The
+sim computed sell value from the base cost, ignoring rental. Fixed in
+`joker_sell_value`; it feeds both the sell economy and the encoded sell
+feature.
+
+**The observation slots were already reserved.** Stage 0a added
+`JOKER_ETERNAL_OFF`..`JOKER_RENTAL_OFF` and the three shop equivalents to the
+frozen contract and asserted them zero. Stage 2 just fills them from the run.
+So the whole stake-sticker feature reached the policy's input without a second
+contract migration -- which was the entire point of doing the contract widening
+first.
+
+**Known simplification:** the perishable debuff sets `debuffed` and toggles the
+joker's passives off, but does not model `remove_from_deck`'s handling of the
+rare add_to_deck side effects (a handful of jokers). Immaterial for scoring;
+revisit only if a perishable-eligible joker with an add_to_deck passive turns
+out to matter.
+
+---
+
+## Phase 7 Stage 1.6 — Tiered deck curriculum and the per-deck eval matrix
+
+**Decision:** decks are introduced a tier at a time, and within the live set
+the sampling weight leans toward the decks the policy is worst at. Both are
+pure functions in `deck_curriculum.py`, the same shape as `shaping_beta_at` /
+`snapshot_fraction_at`, so they unit-test without torch.
+
+**Why tiers, not all 15 at once.** Fifteen decks from step 0 splits every
+episode of data fifteen ways; a deck learns from ~1/15 of the budget from the
+start. Introducing them in order of distance from Red -- resource tweaks first,
+then composition changes, then economy/pool changes, then Plasma alone --
+keeps early per-deck density high and lets each tier build on a policy that
+already handles the easier ones. Plasma is last and by itself because it
+inverts the scoring heuristic (chips ~ mult instead of stacked mult), so
+isolating its unlock keeps its effect on the rest measurable.
+
+**Why prioritized reweighting, and why a uniform floor.** Weight proportional
+to `(max(0, 1 - winrate) + floor) ^ alpha` spends the budget where the policy
+is weakest -- the same principle as the ante ladder, applied across a task
+distribution rather than up a difficulty axis. The uniform blend
+(`uniform_mix`) guarantees no live deck starves however well the others do,
+which matters because a solved deck's weight would otherwise collapse toward
+zero and it would start to forget. A deck with no history yet (just unlocked)
+is treated as win rate 0 -- maximum priority -- which is the right default.
+
+**Difficulty stays in the sampling distribution, never the reward** (the Stage
+1 rule): the schedule reweights *which episodes are played*, and the reward is
+untouched, so the value function is not distorted across the mixture.
+
+**The eval matrix rides the milestone cadence and only the live grid.**
+`_run_deck_matrix_eval` evaluates one held-out block per *active* deck, so its
+cost tracks the tiers rather than paying for all 15 from the start. Each deck
+gets its own fresh eval env (the `deck` kwarg on `SimBalatroEnv`), so training
+state is untouched -- the same guarantee the single-deck eval already makes.
+Emitted as a new `deck_matrix_eval` event; existing monitor panels ignore it by
+the stream's forward-compat rule, so nothing downstream breaks.
+
+**Testable-without-torch by construction.** The scheduling logic is pure and
+fully unit-tested (tier order, Plasma-last, normalized distribution, priority
+lean, uniform floor, the missing-winrate default, config validation). The env
+even accepts the schedule's output in a mock-env test. What remains untested
+until the next rebuild is only the thin torch wrapper -- the trainer calling
+these functions and pushing to the real binding -- which is deferred to the
+post-run verification pass rather than shipped as "looks done".

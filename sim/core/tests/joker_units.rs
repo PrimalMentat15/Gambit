@@ -31,6 +31,9 @@ fn j(id: JokerId) -> OwnedJoker {
         debuffed: false,
         flipped: false,
         eternal: false,
+        perishable: false,
+        perish_tally: 0,
+        rental: false,
         hands_at_create: 0,
         state: JokerState::initial(id),
     }

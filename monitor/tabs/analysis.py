@@ -112,10 +112,10 @@ class AnalysisTab(QWidget):
         reload_button.setStyleSheet(self._button_style())
 
         row.addWidget(QLabel("Metric"))
-        self.metric = QComboBox()
-        self.metric.addItems(COMPARE_TAGS)
-        self.metric.currentTextChanged.connect(self._redraw_compare)
-        row.addWidget(self.metric)
+        self.metric_combo = QComboBox()
+        self.metric_combo.addItems(COMPARE_TAGS)
+        self.metric_combo.currentTextChanged.connect(self._redraw_compare)
+        row.addWidget(self.metric_combo)
         row.addWidget(reload_button)
         row.addStretch(1)
         return bar
@@ -317,7 +317,7 @@ class AnalysisTab(QWidget):
         if item.legend is not None:
             item.legend.clear()
 
-        tag = self.metric.currentText()
+        tag = self.metric_combo.currentText()
         # Colour by position in the ticked list, capped at the palette length --
         # a ninth run folds onto the last slot rather than inventing a hue
         for index, (name, run_dir) in enumerate(self._checked_runs()):
