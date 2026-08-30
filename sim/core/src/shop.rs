@@ -98,6 +98,16 @@ pub struct OwnedJoker {
     /// check it and the copy paths (Ankh/Invisible) carry it
     /// (copy_card copies the whole ability table, common_events.lua:2161).
     pub eternal: bool,
+    /// `ability.perishable` — Orange Stake and above. A perishable joker is
+    /// debuffed once its `perish_tally` reaches 0 (card.lua:513-533).
+    pub perishable: bool,
+    /// `ability.perish_tally` — rounds of life left; starts at
+    /// `PERISHABLE_ROUNDS` (5) and counts down each end of round. 0 on a
+    /// non-perishable joker.
+    pub perish_tally: i64,
+    /// `ability.rental` — Gold Stake. Drains `RENTAL_RATE` ($3) each round
+    /// (card.lua:2271-2276).
+    pub rental: bool,
     /// `ability.hands_played_at_create` (card.lua:337) — Loyalty Card's
     /// anchor; copies inherit the source value.
     pub hands_at_create: i64,
@@ -408,17 +418,48 @@ impl Run {
         if id == JokerId::TodoList {
             state.to_do_hand = roll_to_do_hand(&mut self.rng, &self.hands_table, None);
         }
-        // common_events.lua:2135-2141 — the poll happens for shop/pack areas
-        // regardless of stake modifiers; the rental poll ('ssjr'/'packssjr')
-        // is short-circuited away below stake 8.
-        match area {
-            JokerArea::Shop => {
-                let _ = self.rng.random(&format!("etperpoll{}", self.ante));
+        // common_events.lua:2135-2146 — eternal/perishable/rental stickers.
+        //
+        // The eternal/perishable poll is drawn for every shop/pack joker,
+        // stake or not (the `local ... = pseudorandom(...)` is unconditional;
+        // the modifier checks only decide whether to ACT on it). On White
+        // Stake it is drawn and discarded, which is what keeps this call in
+        // the stream on every stake.
+        //
+        // The rental poll is INSIDE the `if enable_rentals_in_shop and
+        // pseudorandom(...)` short-circuit, so it is drawn ONLY at Gold Stake.
+        // Below stake 8 no rental draw happens and the edition poll below sits
+        // at exactly the pre-P7 stream position -- every frozen vector holds.
+        let meta = joker_by_key(key).expect("joker meta");
+        let mut eternal = false;
+        let mut perishable = false;
+        let mut perish_tally = 0;
+        let mut rental = false;
+        let etper = match area {
+            JokerArea::Shop => Some(self.rng.random(&format!("etperpoll{}", self.ante))),
+            JokerArea::Pack => Some(self.rng.random(&format!("packetper{}", self.ante))),
+            JokerArea::Direct => None,
+        };
+        if let Some(poll) = etper {
+            // The bands are exclusive, so a joker never gets both from one
+            // poll; `set_eternal`/`set_perishable`'s "not the other" guard
+            // (card.lua:508/515) is therefore satisfied by construction, and
+            // only the compat flag gates each.
+            if self.modifiers.enable_eternals_in_shop && poll > 0.7 {
+                eternal = meta.eternal_compat;
+            } else if self.modifiers.enable_perishables_in_shop && poll > 0.4 && poll <= 0.7 {
+                if meta.perishable_compat {
+                    perishable = true;
+                    perish_tally = crate::config::PERISHABLE_ROUNDS;
+                }
             }
-            JokerArea::Pack => {
-                let _ = self.rng.random(&format!("packetper{}", self.ante));
+            if self.modifiers.enable_rentals_in_shop {
+                let key = match area {
+                    JokerArea::Pack => format!("packssjr{}", self.ante),
+                    _ => format!("ssjr{}", self.ante),
+                };
+                rental = self.rng.random(&key) > 0.7;
             }
-            JokerArea::Direct => {}
         }
         // common_events.lua:2148-2149.
         let edition = items::poll_edition(
@@ -436,7 +477,10 @@ impl Run {
             extra_value: 0,
             debuffed: false,
             flipped: false,
-            eternal: false,
+            eternal,
+            perishable,
+            perish_tally,
+            rental,
             hands_at_create: self.hands_played_total,
             state,
         }
@@ -1374,6 +1418,9 @@ impl Run {
             debuffed: false,
             flipped: false,
             eternal: false,
+            perishable: false,
+            perish_tally: 0,
+            rental: false,
             hands_at_create: self.hands_played_total,
             state,
         });
@@ -1494,12 +1541,11 @@ impl Run {
 
     /// Current sell value of a held joker.
     pub fn joker_sell_value(&self, j: &OwnedJoker) -> i64 {
-        items::sell_cost(
-            j.id.meta().cost,
-            j.edition,
-            self.discount_percent,
-            j.extra_value,
-        )
+        // card.lua:381 — a rental joker's cost is forced to 1 in set_cost, so
+        // it sells for max(1, floor(1/2)) + extra_value = 1 + extra_value
+        // regardless of its base price.
+        let cost = if j.rental { 1 } else { j.id.meta().cost };
+        items::sell_cost(cost, j.edition, self.discount_percent, j.extra_value)
     }
 
     /// Current sell value of a held consumable. With Astronomer a Planet's

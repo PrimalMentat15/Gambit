@@ -221,6 +221,9 @@ pub fn encode_obs(run: &Run) -> EnvObs {
                             o.shop_ids[slot] = shop_vocab_joker(j.id);
                             f[SHOP_KIND_OFF + ShopKind::Joker as usize] = 1.0;
                             f[SHOP_EDITION_OFF + edition_index(j.edition)] = 1.0;
+                            f[SHOP_ETERNAL_OFF] = if j.eternal { 1.0 } else { 0.0 };
+                            f[SHOP_PERISHABLE_OFF] = if j.perishable { 1.0 } else { 0.0 };
+                            f[SHOP_RENTAL_OFF] = if j.rental { 1.0 } else { 0.0 };
                         }
                         ShopItemKind::Consumable(c) => {
                             o.shop_ids[slot] = shop_vocab_consumable(c.key);
@@ -334,13 +337,12 @@ pub fn encode_obs(run: &Run) -> EnvObs {
         // has already learned, so a Black Deck reading 6/6 = 1.0 or a Painted
         // hand reading 11/10 = 1.1 is correct and intended.
 
-        // Deck one-hot + stake ordinal. The core is Red/White-only until P7
-        // Stage 1 wires `RunConfig` through; these become `run.deck()` /
-        // `run.stake()` there. Encoded here (rather than left at zero) so the
-        // one-hot invariant "exactly one deck bit set, always" holds from the
-        // first migrated checkpoint onward.
-        g[GLOBAL_DECK_OFF + Deck::Red as usize] = 1.0;
-        g[GLOBAL_STAKE] = Stake::White.ordinal_feature();
+        // Deck one-hot + stake ordinal, read from the run's own config so the
+        // observation can never disagree with the rules being played. The
+        // one-hot invariant "exactly one deck bit set, always" is asserted in
+        // env_tests and mirrored in train/tests/test_sim_env.py.
+        g[GLOBAL_DECK_OFF + run.deck_kind() as usize] = 1.0;
+        g[GLOBAL_STAKE] = stake_ordinal(run.stake());
     }
 
     // ----------------------------------------------------- deck composition

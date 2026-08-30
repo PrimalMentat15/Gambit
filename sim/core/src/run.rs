@@ -1111,6 +1111,42 @@ impl Run {
             (saved, hooks.out)
         };
         self.apply_joker_outbox(out);
+
+        // state_events.lua:108-109 — after each joker's end_of_round eval the
+        // Lua calls calculate_rental() then calculate_perishable(). Both are
+        // stake-only (rental Gold, perishable Orange+), so this whole block is
+        // inert on White Stake: no joker carries the flags.
+        //
+        // Ordering vs the money eval: the rental drain happens HERE, in the
+        // joker loop, before evaluate_round computes interest below -- so a
+        // drained dollar is a dollar interest does not see (card.lua:2271,
+        // state_events.lua:1191). Applied as one pass rather than interleaved
+        // with the eval above because no end_of_round joker effect reads
+        // dollars, so the per-joker interleave is unobservable.
+        for j in &mut self.jokers {
+            if j.rental {
+                // ease_dollars(-rental_rate) (card.lua:2273). May go negative.
+                self.dollars -= crate::config::RENTAL_RATE;
+            }
+        }
+        // calculate_perishable (card.lua:2278-2289): tally counts down, and at
+        // 1 it drops to 0 and the joker is debuffed for good. Decrement first,
+        // then debuff the newly-exhausted ones through `set_joker_debuffed` so
+        // their passives toggle off (and the guard added there keeps them
+        // debuffed through the round-end un-debuff pass below).
+        let mut perished = Vec::new();
+        for (i, j) in self.jokers.iter_mut().enumerate() {
+            if j.perishable && j.perish_tally > 0 {
+                j.perish_tally -= 1;
+                if j.perish_tally == 0 {
+                    perished.push(i);
+                }
+            }
+        }
+        for i in perished {
+            self.set_joker_debuffed(i, true);
+        }
+
         #[cfg(feature = "p5-debug")]
         eprintln!("end_round: saved={saved}");
         if saved {
@@ -1795,6 +1831,15 @@ impl Run {
     /// toggles the passive add_to_deck effects (`from_debuff = true` leaves
     /// negative slots alone via queue_negative_removal).
     pub(crate) fn set_joker_debuffed(&mut self, idx: usize, debuff: bool) {
+        // card.lua:526-533 — a perished joker (perishable, tally exhausted) is
+        // debuffed for good: `set_debuff` hits the perishable branch first and
+        // returns, so a later set_debuff(false) can never revive it. This is
+        // what makes the perishable debuff survive the round-end un-debuff pass
+        // that clears boss debuffs (Crimson Heart).
+        let j = &self.jokers[idx];
+        if !debuff && j.perishable && j.perish_tally <= 0 {
+            return;
+        }
         if self.jokers[idx].debuffed == debuff {
             return;
         }

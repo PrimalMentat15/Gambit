@@ -203,6 +203,14 @@ impl Stake {
     }
 }
 
+/// `G.GAME.perishable_rounds` (game.lua:1896) — rounds a perishable joker
+/// survives before being debuffed.
+pub const PERISHABLE_ROUNDS: i64 = 5;
+
+/// `G.GAME.rental_rate` (game.lua:1897) — dollars a rental joker drains each
+/// round at cash out.
+pub const RENTAL_RATE: i64 = 3;
+
 /// Which blind-size curve `get_blind_amount` uses
 /// (misc_functions.lua:919-954), selected by `G.GAME.modifiers.scaling`.
 ///
