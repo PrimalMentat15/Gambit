@@ -8,14 +8,16 @@ and run-control layer.
 
 - **`sim/`** — a seed-faithful headless reimplementation of Balatro in Rust: bit-exact RNG
   (`pseudohash`/`pseudoseed` streams + LuaJIT's Tausworthe `math.random`), the full scoring
-  pipeline, all 150 jokers, consumables, vouchers, tags, and boss blinds. ~300 tests, including
-  oracle vectors generated with a pinned game-era LuaJIT and full-state cross-validation against
-  the real game. Exposed to Python as a vectorized PyO3 env (`sim/py`) that steps thousands of
-  games in parallel.
+  pipeline, all 150 jokers, consumables, vouchers, tags, boss blinds, and all **15 decks × 8
+  stakes** (deck backs, the stake modifier cascade, and the eternal/perishable/rental stickers).
+  ~330 tests, including oracle vectors generated with a pinned game-era LuaJIT and full-state
+  cross-validation against the real game. Exposed to Python as a vectorized PyO3 env (`sim/py`)
+  that steps thousands of games in parallel.
 - **`train/`** — a CleanRL-style PPO stack: entity-token transformer policy (~1.1M params) with
-  autoregressive masked pointer heads over a composite action space, ante-ladder curriculum,
-  snapshot start-state mixing (backward curriculum), and throughput tuning (bf16 updates,
-  `torch.compile`, GPU-resident buffers).
+  autoregressive masked pointer heads over a composite action space, an ante-ladder curriculum and
+  a tiered deck-mixture curriculum (decks introduced by distance from Red, sampling weighted toward
+  the weakest), snapshot start-state mixing (backward curriculum), and throughput tuning (bf16
+  updates, `torch.compile`, GPU-resident buffers).
 - **`bridge/`** — a client for [coder/balatrobot](https://github.com/coder/balatrobot) that drives
   the *real* game for evaluation and for the cross-validation harness (`balatro-crossval`) that
   diffs sim vs. game state after every action of seeded runs.

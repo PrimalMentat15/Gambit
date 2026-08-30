@@ -1164,6 +1164,13 @@ impl Run {
         // Win check happens BEFORE ease_ante(1) (state_events.lua:111-114);
         // a Mr. Bones save on the ante-8 boss still wins the run
         // (state_events.lua:112 runs whenever the round survived).
+        //
+        // `endless` is a DORMANT P8 stub, never true in P7. Endless / naneinf
+        // is a separate project with a differently-SHAPED reward (growth rate,
+        // not survival) and its own critic -- see the "Phase 7 scope, and why
+        // naneinf is deferred to Phase 8" entry in DECISIONS.md. Wiring it
+        // (continue past ante 8, depth reward, step cap) is a P8 task; the flag
+        // is left here only so the win check reads correctly once it lands.
         if !self.config.endless && self.ante == self.config.win_ante && blind_proto.is_boss {
             self.won = true;
         }

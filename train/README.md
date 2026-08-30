@@ -140,6 +140,30 @@ TB: `curriculum/win_ante`, `curriculum/promo_win_rate`,
 `charts/ep_win_rate`.  β annealing stays a manual hook
 (`PPOTrainer.set_shaping_beta`, β=1.0 for M1).
 
+## Decks, stakes, and the deck-mixture curriculum (P7)
+
+Envs take `deck` (0..14, `encoding.Deck` order, 0 = Red) and `stake` (1..8,
+1 = White) ctor kwargs, and expose `set_deck(i)` / `set_stake(i)` plus
+`set_deck_distribution(weights)` / `set_stake_distribution(weights)` for
+per-episode sampling.  Like `set_win_ante`, a change lands at each env's next
+(auto-)reset.  **With no distribution set the reset path draws NOTHING extra
+from the seed stream**, so a single-config run is bit-identical to the pre-P7
+env (the same guarantee snapshot mixing makes at fraction 0).  The observation
+carries the deck as a one-hot and the stake as an ordinal in the reserved
+`global[48:64)` block; stake stickers (eternal/perishable/rental) ride the
+joker/shop feature vectors.
+
+`config.EnvConfig` exposes `deck` / `stake` (fixed) and `deck_weights` /
+`stake_weights` (static mixture).  The **tiered deck curriculum**
+(`deck_curriculum.*`, off by default) overrides the static weights when
+enabled: decks unlock in tiers by distance from Red (`tier_steps`), and among
+the live decks the sampling weight leans toward the weakest
+(`(1 - winrate + floor) ** alpha`) with a `uniform_mix` floor so none starves.
+Win rates come from the per-`(deck, stake)` EMA the rollout loop maintains.  A
+per-deck eval matrix (`deck_matrix_eval` event, one series per live deck) runs
+at the milestone cadence.  The schedule is a pure function
+(`deck_curriculum.deck_weights`), unit-tested without torch.
+
 ## Snapshot start-state mixing (M3 backward curriculum)
 
 Envs expose `load_snapshot_pool(path)` + `set_snapshot_fraction(f)`: with
@@ -245,6 +269,7 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
 | `configs/`                  | `debug.yaml` (tiny/CPU), `default.yaml` (plan hypers), `m1.yaml` (first real run), `m3.yaml` (m1 + snapshot mixing + resume), `m3_fast.yaml` (m3 + perf toggles; see "Throughput"). |
 | `scripts/bench_ppo.py`      | Wall-clock phase breakdown + torch.profiler bench of collect/update (supports `--set path=value` config overrides). |
 | `scripts/migrate_contract_p7.py` | One-shot checkpoint migration to the P7 observation contract: zero-pads the widened `joker_proj`/`shop_proj` inputs and remaps `slot_embed` for the raised slot caps. `--verify` asserts the migrated policy encodes pre-P7 states identically. Idempotent. |
+| `scripts/replay_failures.py` | Load a checkpoint and dump per-action traces for episodes matching a failure filter (`ante1-small`, `ante1-boss`, `any-loss`, `runaway`) -- the cards it selected and the chips each hand scored, plus a per-play control aggregate. Read-only; used to diagnose *what* the policy does in a failure mode, not just how often. |
 
 ## Event stream and stopping a run
 

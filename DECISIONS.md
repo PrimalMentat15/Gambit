@@ -804,6 +804,8 @@ frozen and already proven not to cost anything.
 
 ## Phase 7 Stage 0a — Migrating a contract without retraining
 
+*Recorded 2026-08-20.*
+
 **Decision:** widen the per-token feature vectors (`F_JOKER_FEAT` 11 → 15,
 `F_SHOP_FEAT` 13 → 16) by **appending** fields, and migrate existing
 checkpoints by filling the new input columns of `joker_proj` / `shop_proj`
@@ -829,6 +831,8 @@ MLP's shape. `encoding.py` says so at the point of use.
 ---
 
 ## Phase 7 Stage 0b — The lossy layer was the encoder, not the simulator
+
+*Recorded 2026-08-20.*
 
 **Decision:** raise the observation slot caps from 10/6/3 to
 `HAND_MAX = 12`, `JOKER_SLOTS = 16`, `CONSUMABLE_SLOTS = 8`.
@@ -896,6 +900,8 @@ common case is invisible until the uncommon case is the one that wins.
 ---
 
 ## Phase 7 Stage 0c — A read-only monitor that crashed training
+
+*Recorded 2026-08-22.*
 
 **Decision:** cap `TailReader` reads at 4 MB, and skip replaying
 `episode_end` from deep history using a byte-level type peek that runs
@@ -970,6 +976,8 @@ was correct only relative to a file size.
 
 ## Phase 7 Stage 0d — One contract in two files, now actually enforced
 
+*Recorded 2026-08-22.*
+
 **Decision:** `test_rust_mirror_matches_encoding` parses `sim/py/src/consts.rs`
 and asserts every shared constant and both frozen enums (`Deck`, `Stake`) match
 `balatro_train/encoding.py`.
@@ -1013,6 +1021,8 @@ rust=6 != encoding.py=16`.
 ---
 
 ## Phase 7 Stage 0e — The half of the migration that was not in the state dict
+
+*Recorded 2026-08-22.*
 
 **Decision:** `migrate_contract_p7.py` migrates `ck["optimizer"]` alongside
 `ck["policy"]`, and `--verify` gates on the float32-vs-float64 epsilon
@@ -1067,6 +1077,8 @@ not another assertion about `joker_proj`; it is one `optimizer.step()`.
 ---
 
 ## Phase 7 Stage 1 — Decks and stakes in the core
+
+*Recorded 2026-08-24.*
 
 **Decision:** `Run::new(seed)` stays, and becomes a shim for
 `Run::with_config(seed, RunConfig::default())`.
@@ -1128,7 +1140,56 @@ exactly as Lua does, and Lua numbers are the same f64.
 
 ---
 
+## Phase 7 Stage 1.6 — Tiered deck curriculum and the per-deck eval matrix
+
+*Recorded 2026-08-30.*
+
+**Decision:** decks are introduced a tier at a time, and within the live set
+the sampling weight leans toward the decks the policy is worst at. Both are
+pure functions in `deck_curriculum.py`, the same shape as `shaping_beta_at` /
+`snapshot_fraction_at`, so they unit-test without torch.
+
+**Why tiers, not all 15 at once.** Fifteen decks from step 0 splits every
+episode of data fifteen ways; a deck learns from ~1/15 of the budget from the
+start. Introducing them in order of distance from Red -- resource tweaks first,
+then composition changes, then economy/pool changes, then Plasma alone --
+keeps early per-deck density high and lets each tier build on a policy that
+already handles the easier ones. Plasma is last and by itself because it
+inverts the scoring heuristic (chips ~ mult instead of stacked mult), so
+isolating its unlock keeps its effect on the rest measurable.
+
+**Why prioritized reweighting, and why a uniform floor.** Weight proportional
+to `(max(0, 1 - winrate) + floor) ^ alpha` spends the budget where the policy
+is weakest -- the same principle as the ante ladder, applied across a task
+distribution rather than up a difficulty axis. The uniform blend
+(`uniform_mix`) guarantees no live deck starves however well the others do,
+which matters because a solved deck's weight would otherwise collapse toward
+zero and it would start to forget. A deck with no history yet (just unlocked)
+is treated as win rate 0 -- maximum priority -- which is the right default.
+
+**Difficulty stays in the sampling distribution, never the reward** (the Stage
+1 rule): the schedule reweights *which episodes are played*, and the reward is
+untouched, so the value function is not distorted across the mixture.
+
+**The eval matrix rides the milestone cadence and only the live grid.**
+`_run_deck_matrix_eval` evaluates one held-out block per *active* deck, so its
+cost tracks the tiers rather than paying for all 15 from the start. Each deck
+gets its own fresh eval env (the `deck` kwarg on `SimBalatroEnv`), so training
+state is untouched -- the same guarantee the single-deck eval already makes.
+Emitted as a new `deck_matrix_eval` event; existing monitor panels ignore it by
+the stream's forward-compat rule, so nothing downstream breaks.
+
+**Testable-without-torch by construction.** The scheduling logic is pure and
+fully unit-tested (tier order, Plasma-last, normalized distribution, priority
+lean, uniform floor, the missing-winrate default, config validation). The env
+even accepts the schedule's output in a mock-env test. What remains untested
+until the next rebuild is only the thin torch wrapper -- the trainer calling
+these functions and pushing to the real binding -- which is deferred to the
+post-run verification pass rather than shipped as "looks done".
+
 ## Phase 7 Stage 2 — Stake stickers (eternal / perishable / rental)
+
+*Recorded 2026-08-30.*
 
 **Decision:** model the three shop-joker stickers that Black (4), Orange (7)
 and Gold (8) stakes enable, plus their per-round consequences.
@@ -1187,47 +1248,62 @@ out to matter.
 
 ---
 
-## Phase 7 Stage 1.6 — Tiered deck curriculum and the per-deck eval matrix
 
-**Decision:** decks are introduced a tier at a time, and within the live set
-the sampling weight leans toward the decks the policy is worst at. Both are
-pure functions in `deck_curriculum.py`, the same shape as `shaping_beta_at` /
-`snapshot_fraction_at`, so they unit-test without torch.
+---
 
-**Why tiers, not all 15 at once.** Fifteen decks from step 0 splits every
-episode of data fifteen ways; a deck learns from ~1/15 of the budget from the
-start. Introducing them in order of distance from Red -- resource tweaks first,
-then composition changes, then economy/pool changes, then Plasma alone --
-keeps early per-deck density high and lets each tier build on a policy that
-already handles the easier ones. Plasma is last and by itself because it
-inverts the scoring heuristic (chips ~ mult instead of stacked mult), so
-isolating its unlock keeps its effect on the rest measurable.
+## Phase 7 scope, and why naneinf is deferred to Phase 8
 
-**Why prioritized reweighting, and why a uniform floor.** Weight proportional
-to `(max(0, 1 - winrate) + floor) ^ alpha` spends the budget where the policy
-is weakest -- the same principle as the ante ladder, applied across a task
-distribution rather than up a difficulty axis. The uniform blend
-(`uniform_mix`) guarantees no live deck starves however well the others do,
-which matters because a solved deck's weight would otherwise collapse toward
-zero and it would start to forget. A deck with no history yet (just unlocked)
-is treated as win rate 0 -- maximum priority -- which is the right default.
+*Recorded 2026-08-30.*
 
-**Difficulty stays in the sampling distribution, never the reward** (the Stage
-1 rule): the schedule reweights *which episodes are played*, and the reward is
-untouched, so the value function is not distorted across the mixture.
+**Decision:** Phase 7's target is winning the full 15 decks x 8 stakes grid at
+ante 8 -- and nothing else. Endless / naneinf (reaching an inf score) is a
+separate Phase 8 project with its own reward file and its own checkpoint
+lineage. The `RunConfig.endless` flag stays a dormant stub until then.
 
-**The eval matrix rides the milestone cadence and only the live grid.**
-`_run_deck_matrix_eval` evaluates one held-out block per *active* deck, so its
-cost tracks the tiers rather than paying for all 15 from the start. Each deck
-gets its own fresh eval env (the `deck` kwarg on `SimBalatroEnv`), so training
-state is untouched -- the same guarantee the single-deck eval already makes.
-Emitted as a new `deck_matrix_eval` event; existing monitor panels ignore it by
-the stream's forward-compat rule, so nothing downstream breaks.
+**Why they are not one project.** They look like "ante 8, but keep going," and
+they are not. The difference is in the *shape* of the reward, not its tuning:
 
-**Testable-without-torch by construction.** The scheduling logic is pure and
-fully unit-tested (tier order, Plasma-last, normalized distribution, priority
-lean, uniform floor, the missing-winrate default, config validation). The env
-even accepts the schedule's output in a mock-env test. What remains untested
-until the next rebuild is only the thin torch wrapper -- the trainer calling
-these functions and pushing to the real binding -- which is deferred to the
-post-run verification pass rather than shipped as "looks done".
+- **Reward scale.** The ante-8 reward is bounded -- a terminal win/loss plus
+  potential-based shaping for reaching each blind and keeping the economy
+  healthy -- so the value function lives in roughly [0, 1] and behaves. A score
+  reward cannot be the raw score: it spans ~300 orders of magnitude and wrecks
+  value estimation and gradients instantly. Naneinf's reward has to track
+  something like the change in *log-of-log* score per hand -- i.e. the *growth
+  rate* of the engine, which is what actually predicts reaching inf. That single
+  reframing (reward the engine's growth rate, near-zero for merely surviving) is
+  the biggest structural difference between the two setups.
+
+- **Risk posture, which is the reward's shape, not a knob.** Rewarding reliable
+  clears teaches a conservative policy. Rewarding growth rate teaches a
+  high-variance, all-in policy willing to tank its win rate to chase the engine.
+  A shared critic would be asked to be conservative and degenerate at once. So
+  naneinf wants, at minimum, separate policy/value heads -- and realistically a
+  separate model, or at least an explicit objective token with separate reward
+  channels. Reward normalization alone (bounded vs log-log) cannot be shared.
+
+- **Exploration and credit assignment.** Ante 8 is forgiving; many builds
+  satisfy it, so entropy exploration plus shaping stumbles into a working
+  strategy (this is roughly why PPO reaches ~65-70%). Naneinf needs a specific
+  rare combination of jokers assembled across a whole run, which entropy will
+  almost never find by chance -- the local-optimum trap that capped the public
+  PPO attempt at ~2.4%, except the target is rarer still. That points at
+  imitation bootstrapping from known infinite combos, a Go-Explore archive of
+  promising engine-partial states to reset into, and reward shaping keyed to
+  engine-assembly milestones (a copier joker, a retrigger source, the first
+  multiplicative hand) so credit for the eventual explosion reaches the shop
+  decisions that set it up. None of that is in the ante-8 stack.
+
+**Plasma-first, when P8 comes.** Plasma makes chip- and mult-scaling both
+first-class, so its engine-relevant state features differ from a normal mult
+build, and a milestone reward tuned for mult would under-credit the chip side
+Plasma needs. Plasma is also the cheapest place to find a working engine
+(ante-scaling makes inf far easier), so P8 starts there and only attempts the
+off-Plasma version once Plasma reliably hits inf -- same reward shape, much
+steeper exploration. The deck-conditioning P7 already builds is the natural hook
+for a Plasma-only naneinf policy.
+
+**Consequence for P7:** keep the ante-8 line (m7 / the deck-stake grid) exactly
+as it is. Everything P7 builds -- deck/stake in the sim, the tiered deck
+curriculum, the per-deck eval matrix -- serves grid mastery and is untouched by
+this decision. The endless plumbing added in Stage 1 (`RunConfig.endless`) is
+left in place but inert; wiring it is a P8 task, against a P8 reward.
