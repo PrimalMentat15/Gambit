@@ -270,6 +270,7 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
 | `scripts/bench_ppo.py`      | Wall-clock phase breakdown + torch.profiler bench of collect/update (supports `--set path=value` config overrides). |
 | `scripts/migrate_contract_p7.py` | One-shot checkpoint migration to the P7 observation contract: zero-pads the widened `joker_proj`/`shop_proj` inputs and remaps `slot_embed` for the raised slot caps. `--verify` asserts the migrated policy encodes pre-P7 states identically. Idempotent. |
 | `scripts/replay_failures.py` | Load a checkpoint and dump per-action traces for episodes matching a failure filter (`ante1-small`, `ante1-boss`, `any-loss`, `runaway`) -- the cards it selected and the chips each hand scored, plus a per-play control aggregate. Read-only; used to diagnose *what* the policy does in a failure mode, not just how often. |
+| `scripts/rebase_checkpoint.py` | Rebase a checkpoint to `global_step` 0, keeping weights/optimizer/ret-norm, so a new run's step-based schedules (lr, shaping, `deck_curriculum.tier_steps`) start from 0 instead of re-anchoring to the old run's step count. Used to seed a new training phase from a strong checkpoint. |
 
 ## Event stream and stopping a run
 

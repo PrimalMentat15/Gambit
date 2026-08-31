@@ -1,0 +1,134 @@
+# M8: P7 deck-mixture run -- master ante 8 across all 15 decks at White stake.
+#
+# Resumes m7's best checkpoint (ckpt_9150136320.pt, 69.75% ante-8 on Red/White)
+# REBASED to step 0 first, so every step-based schedule in this file means what
+# it says instead of firing in m7's past:
+#
+#   python scripts/rebase_checkpoint.py runs/m7/ckpt_9150136320.pt \
+#       -o runs/m8_seed.pt
+#   python -m balatro_train.ppo --config configs/m8.yaml --resume runs/m8_seed.pt
+#
+# The rebase keeps the policy weights, optimizer and return-normalizer, and only
+# zeroes global_step / iteration. Without it the default `deck_curriculum.
+# tier_steps` (0.5-2B) would all be in the past at ~9.15B and every deck would
+# unlock at once -- silently defeating the tiering (same class of bug as the lr
+# ramp running past total_timesteps).
+#
+# Scope: decks only, White stake. Stakes are a following run (a ladder, per the
+# P7 plan); naneinf is P8. See DECISIONS.md "Phase 7 scope".
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  # 2048, matching m6's memory fix: the P7 slot caps put the rollout buffer at
+  # ~2.2 GB (4096 envs), which on this box competes with the browser/IDE and
+  # has killed a run. 2048 halves it. Bump back to 4096 only with comfortable
+  # free RAM.
+  num_envs: 4096
+  seed: 0
+  # Base config the curriculum samples around. deck is overridden per-episode
+  # by deck_curriculum; stake stays White for the whole P7 grid.
+  deck: 0
+  stake: 1
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  # Long: Plasma (the last tier) unlocks at 2B, and needs billions more to
+  # master the inverted heuristic. ~4.2 days at 2048 envs / ~11k sps. Stop
+  # early and cherry-pick from the deck-matrix eval if a plateau sets in.
+  total_timesteps: 4000000000
+  rollout_len: 128
+  minibatch_size: 4096
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+
+  # CONSTANT lr, not annealed -- deliberate, and the opposite of the ante-8
+  # runs. A decaying lr fights a tiered curriculum: it would be highest at
+  # step 0 (only Red is live -> disrupts the mastery we are resuming) and near
+  # zero by 2B (when Plasma finally unlocks and most needs to learn). A flat lr
+  # gives every deck the same learning capacity as it comes online. 5e-5 sits
+  # just above m7's late ~3e-5 -- enough to learn deck-specific play, gentle
+  # enough not to wreck Red. A final consolidation anneal can be a later phase.
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: true
+  buffer_device: auto
+  auto_minibatch: false
+  fused_adam: true
+  pin_memory: false
+
+curriculum:
+  # Ante stays at 8 (single rung): this run masters the grid at ante 8, it does
+  # not climb antes. The promotion threshold is inert with a one-entry ladder;
+  # kept only so the promotion + milestone evals still run.
+  enabled: true
+  start_ante: 8
+  ladder: [8]
+  promote_winrate: 0.7
+  eval_every_steps: 25000000
+  promotion_eval_episodes: 2000
+  eval_num_envs: 512
+  eval_seed_base: 1000000
+  # The deck matrix rides this cadence -- one held-out block per live deck.
+  milestone_every_steps: 50000000
+  milestone_episodes: 2000
+
+deck_curriculum:
+  enabled: true
+  # tier_steps are ABSOLUTE global steps; they work as written ONLY because the
+  # seed checkpoint was rebased to 0. Red is live from the start; each later
+  # tier unlocks in order of distance from Red, Plasma alone last.
+  tier_steps: [0, 0, 0, 0]
+  # Among live decks, weight ~ (1 - winrate + floor)^alpha. alpha 1.0 is a
+  # linear lean toward the weak; raise toward 1.5-2.0 to concentrate harder on
+  # a lagging deck. uniform_mix keeps a floor so none starves.
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  # Off. The backward curriculum only helps a weak policy reach late antes; the
+  # resumed policy already reaches ante 8 ~70% on Red and transfers strongly.
+  # A per-deck pool_v2 is a "regenerate only if a specific deck proves unable to
+  # reach its late antes" item, not an upfront cost.
+  enabled: false
+
+shaping:
+  # Constant 0.1, the regime m4->m7 all trained under. Stated as a constant
+  # (end <= start disables the anneal).
+  beta: 0.1
+  anneal:
+    start_step: 0
+    end_step: 0
+    final_beta: 0.1
+
+log:
+  run_name: m8
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

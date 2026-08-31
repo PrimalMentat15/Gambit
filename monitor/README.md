@@ -51,6 +51,16 @@ definitions rather than duplicating them. That package is stdlib-only, so the
 monitor's own environment needs no trainer dependency; `monitor/__init__.py`
 puts `train/` on `sys.path` so the import resolves.
 
+## Panels of note
+
+Most panels chart one series over time; two are worth calling out:
+
+* **`milestone`** -- the ante-8 argmax win rate on held-out seeds, the one
+  number that means the same thing across the whole run.
+* **`deck_matrix`** (P7) -- one bar per *live* deck from the `deck_matrix_eval`
+  event, coloured by win rate, so "which deck is the mixture lagging on" is a
+  glance. Empty until a run has the deck curriculum enabled.
+
 ## Adding a panel
 
 Drop a file in `panels/`. The registry discovers it; the shell docks it.

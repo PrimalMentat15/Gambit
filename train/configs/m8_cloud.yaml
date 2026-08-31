@@ -1,0 +1,146 @@
+# M8-cloud: P7 deck-mixture run on a rented single RTX-5090 (Vast.ai).
+#
+# Same objective as m8.yaml -- master ante 8 across all 15 decks at White stake
+# -- but tuned for a DEDICATED box instead of the local machine that shares RAM
+# with the browser/IDE/monitor. Resumes the rebased seed checkpoint:
+#
+#   python -m balatro_train.ppo --config configs/m8_cloud.yaml --resume runs/m8_seed.pt
+#
+# The seed was m7's best (ckpt_9150136320.pt, 69.75% on Red/White) rebased to
+# step 0 (weights + optimizer + return-norm kept, global_step/iteration zeroed),
+# so every step-based schedule below means what it says.
+#
+# Decks are ALL LIVE FROM STEP 0 (tier_steps [0,0,0,0]) with prioritized
+# sampling toward the weakest deck -- not staged tiers. Rationale: the resumed
+# policy already masters Red and shares ~90% of its mechanics across decks, so
+# the data-dilution argument for staging is weak; the prioritized reweighting is
+# the part that earns its keep. If the deck matrix shows Plasma dragging Red down
+# once both are live, revert to staged tier_steps (e.g. [0.5,1,1.5,2]e9).
+#
+# Scope: decks only, White stake. Stakes are a following ladder run; naneinf is
+# P8. See DECISIONS.md "Phase 7 scope".
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  # 4096 on a dedicated 32 GB 5090: no browser/IDE/monitor competing for host
+  # RAM (the monitor runs locally off mirrored events, not on this box), and the
+  # rollout buffer lives in VRAM (buffer_device: cuda) not host RAM. Throughput
+  # is CPU-bound on this 16-thread box, so going past 4096 lengthens collection
+  # without a matching speedup -- 4096 is the sweet spot here.
+  num_envs: 4096
+  seed: 0
+  # Base config the curriculum samples around. deck is overridden per-episode
+  # by deck_curriculum; stake stays White for the whole P7 grid.
+  deck: 0
+  stake: 1
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  # ~4 B steps. Wall-clock depends on CPU-bound sps on this box; stop early with
+  # killrun --stop and cherry-pick from the deck-matrix eval if a plateau sets in.
+  total_timesteps: 4000000000
+  rollout_len: 128
+  # 32768, the m5 setup: on a 32 GB 5090 the update fits full-size, giving 16
+  # minibatches per epoch (524288 = 4096 envs x 128 rollout) instead of 128 --
+  # fewer, larger optimizer steps, better GPU utilization. auto_minibatch below
+  # is the safety net: it only ever halves this down if VRAM is tight (the
+  # rollout buffer is also GPU-resident), never up. Must divide 524288.
+  minibatch_size: 32768
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+
+  # CONSTANT lr, not annealed -- deliberate, opposite of the ante-8 runs. A
+  # decaying lr fights a deck mixture: highest at step 0 (risking the Red mastery
+  # we resume) and near zero later (when the weakest decks still need to learn).
+  # A flat lr gives every deck equal capacity. 5e-5 sits just above m7's late
+  # ~3e-5 -- enough to learn deck-specific play, gentle enough not to wreck Red.
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: true
+  # Dedicated box: keep the rollout buffer VRAM-resident (32 GB is ample) so the
+  # queued pre-step buffers overlap the Rust env.step, and pin host staging for
+  # fast non-blocking H2D. pin_memory is safe here -- 30 GB RAM, nothing else on
+  # the box (this is exactly the OOM that forced it off locally, and it cannot
+  # recur on a dedicated Linux box with the buffer on the GPU).
+  buffer_device: cuda
+  # On: startup VRAM probe halves minibatch_size (32768) until the update fits
+  # alongside the GPU-resident rollout buffer. On 32 GB it should stay at 32768;
+  # kept on as a safety net so a launch never OOMs on the update.
+  auto_minibatch: true
+  fused_adam: true
+  pin_memory: true
+
+curriculum:
+  # Ante fixed at 8 (single rung): master the grid at ante 8, do not climb antes.
+  # The promotion threshold is inert with a one-entry ladder; kept so the
+  # promotion + milestone evals still run.
+  enabled: true
+  start_ante: 8
+  ladder: [8]
+  promote_winrate: 0.7
+  eval_every_steps: 25000000
+  promotion_eval_episodes: 2000
+  eval_num_envs: 512
+  eval_seed_base: 1000000
+  # The deck matrix rides this cadence -- one held-out block per live deck.
+  milestone_every_steps: 50000000
+  milestone_episodes: 2000
+
+deck_curriculum:
+  enabled: true
+  # All decks live from step 0 (each unlock threshold is 0). Red is always live;
+  # every other tier turns on at step >= 0 too. Prioritized sampling then leans
+  # the mixture toward whichever deck is currently weakest.
+  tier_steps: [0, 0, 0, 0]
+  # Among live decks, weight ~ (1 - winrate + floor)^alpha. alpha 1.0 is a linear
+  # lean toward the weak; raise toward 1.5-2.0 to concentrate harder on a lagging
+  # deck. uniform_mix keeps a floor so none starves.
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  # Off. The backward curriculum only helps a weak policy reach late antes; the
+  # resumed policy already reaches ante 8 ~70% on Red and transfers strongly.
+  enabled: false
+
+shaping:
+  # Constant 0.1, the regime m4->m7 all trained under (end <= start disables the
+  # anneal).
+  beta: 0.1
+  anneal:
+    start_step: 0
+    end_step: 0
+    final_beta: 0.1
+
+log:
+  run_name: m8_cloud
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false
