@@ -197,6 +197,9 @@ class PPOTrainer:
         self.obs, self.masks = self.env.reset(seeds)
         self._apply_snapshot_fraction()
         self._apply_shaping_beta()
+        # Dead-cash potential (m9): a constant, so push it once here (the env
+        # keeps it across resumes -- load_checkpoint does not recreate the env).
+        self.env.set_cash_beta(cfg.shaping.cash_beta)
         self._apply_deck_curriculum()
 
         self.writer = None
@@ -745,10 +748,13 @@ class PPOTrainer:
         self.policy.train()
         return stats
 
-    def _run_deck_matrix_eval(self, episodes: int) -> dict:
-        """Argmax win rate per active deck at win_ante 8, on the held-out seed
-        block. Only the decks the curriculum has unlocked are evaluated, so the
-        cost tracks the live grid rather than all 15 from step 0.
+    def _run_deck_matrix_eval(self, episodes: int, deterministic: bool = True) -> dict:
+        """Per-deck win rate at win_ante 8 on the held-out seed block, for the
+        decks the curriculum has unlocked (so cost tracks the live grid, not all
+        15 from step 0). ``deterministic`` picks argmax (the deployment metric)
+        or sampled play; the gap between the two is the argmax-brittleness
+        signal -- a deck whose sampled win rate is healthy while its argmax
+        collapses has a policy mode on a knife-edge (as Black did at ~1.8B).
 
         Each deck gets a fresh eval env (SimBalatroEnv takes a deck kwarg), so
         training env state is untouched -- same guarantee as _run_eval. Returns
@@ -770,7 +776,7 @@ class PPOTrainer:
                 env_name=self.cfg.env.name,
                 num_envs=cur.eval_num_envs,
                 episodes=episodes,
-                deterministic=True,
+                deterministic=deterministic,
                 seed_base=cur.eval_seed_base,
                 device=self.device,
                 env_kwargs=env_kwargs,
@@ -878,16 +884,25 @@ class PPOTrainer:
             if self.cfg.deck_curriculum.enabled:
                 t1 = time.time()
                 matrix = self._run_deck_matrix_eval(cur.milestone_episodes)
+                sampled = self._run_deck_matrix_eval(cur.milestone_episodes,
+                                                     deterministic=False)
                 if self.writer:
                     for d, wr in matrix.items():
                         self.writer.add_scalar(f"deck_matrix/win_rate_deck{d}", wr,
                                                self.global_step)
+                        self.writer.add_scalar(f"deck_matrix/sampled_win_rate_deck{d}",
+                                               sampled[d], self.global_step)
+                        # sampled - argmax: large positive = brittle greedy mode.
+                        self.writer.add_scalar(f"deck_matrix/argmax_gap_deck{d}",
+                                               sampled[d] - wr, self.global_step)
                 emit(
                     EventType.DECK_MATRIX_EVAL,
                     step=self.global_step,
                     episodes=cur.milestone_episodes,
                     elapsed=time.time() - t1,
                     win_rate_by_deck={str(d): round(wr, 4) for d, wr in matrix.items()},
+                    sampled_win_rate_by_deck={str(d): round(wr, 4)
+                                              for d, wr in sampled.items()},
                 )
 
     # ------------------------------------------------------------ checkpoints
@@ -904,6 +919,8 @@ class PPOTrainer:
                 "global_step": self.global_step,
                 "iteration": self.iteration,
                 "win_ante": self.win_ante,
+                "ep_wins_by_cohort": self.ep_wins_by_cohort,
+                "ep_count_by_cohort": self.ep_count_by_cohort,
             },
             path,
         )
@@ -928,6 +945,19 @@ class PPOTrainer:
             self.ret_norm.load_state_dict(ckpt["ret_norm"])
         self.global_step = ckpt["global_step"]
         self.iteration = ckpt["iteration"]
+        # The per-cohort win-rate EMAs drive the deck sampler but live only in
+        # memory, so a resume without this wipes them and re-derives the deck
+        # mixture from scratch -- perturbing which decks are emphasized for the
+        # first ~200 episodes/cohort, enough to tip a brittle deck's argmax.
+        # Restored before _apply_deck_curriculum() below so the first sampling
+        # distribution is continuous. tuple() guards pickle returning list keys;
+        # .get keeps pre-P7 checkpoints (which lack these) loading as empty.
+        self.ep_wins_by_cohort = {
+            tuple(k): v for k, v in (ckpt.get("ep_wins_by_cohort") or {}).items()
+        }
+        self.ep_count_by_cohort = {
+            tuple(k): v for k, v in (ckpt.get("ep_count_by_cohort") or {}).items()
+        }
         if self.cfg.curriculum.enabled and ckpt.get("win_ante") is not None:
             self.win_ante = int(ckpt["win_ante"])
             self.env.set_win_ante(self.win_ante)

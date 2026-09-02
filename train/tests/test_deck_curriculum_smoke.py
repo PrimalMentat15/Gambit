@@ -53,10 +53,31 @@ def test_curriculum_trains_and_pushes_distribution(tmp_path):
 @pytest.mark.timeout(180)
 def test_deck_matrix_eval_returns_a_grid(tmp_path):
     trainer = PPOTrainer(_cfg(tmp_path, tier_steps=[0, 0, 0, 0]))
-    matrix = trainer._run_deck_matrix_eval(episodes=8)
     live = active_decks(0, trainer.cfg.deck_curriculum)
-    assert set(matrix) == set(live), "matrix decks != active decks"
-    assert all(0.0 <= wr <= 1.0 for wr in matrix.values())
+    # Both the argmax (deployment) and sampled (brittleness comparator) passes
+    # must return a full per-deck grid over the live decks.
+    matrix = trainer._run_deck_matrix_eval(episodes=8)
+    sampled = trainer._run_deck_matrix_eval(episodes=8, deterministic=False)
+    for grid in (matrix, sampled):
+        assert set(grid) == set(live), "matrix decks != active decks"
+        assert all(0.0 <= wr <= 1.0 for wr in grid.values())
+
+
+@pytest.mark.timeout(180)
+def test_cohort_ema_survives_checkpoint_roundtrip(tmp_path):
+    # The deck sampler reads per-cohort win-rate EMAs; they must survive a
+    # resume or the deck mixture resets on every restart (the perturbation that
+    # tipped Black's brittle argmax at ~1.8B).
+    t1 = PPOTrainer(_cfg(tmp_path, tier_steps=[0, 0, 0, 0]))
+    t1.ep_wins_by_cohort = {(0, 1): 0.7, (4, 1): 0.27, (13, 1): 0.4}
+    t1.ep_count_by_cohort = {(0, 1): 500, (4, 1): 900, (13, 1): 300}
+    path = t1.save_checkpoint()
+
+    t2 = PPOTrainer(_cfg(tmp_path, tier_steps=[0, 0, 0, 0]))
+    assert t2.ep_wins_by_cohort == {}, "fresh trainer should start empty"
+    t2.load_checkpoint(path)
+    assert t2.ep_wins_by_cohort == t1.ep_wins_by_cohort
+    assert t2.ep_count_by_cohort == t1.ep_count_by_cohort
 
 
 @pytest.mark.timeout(120)
