@@ -13,6 +13,7 @@ Run:  python -m balatro_train.eval --checkpoint checkpoints/run/ckpt_X.pt \
 from __future__ import annotations
 
 import argparse
+import math
 
 import numpy as np
 import torch
@@ -46,6 +47,14 @@ def evaluate(
     env = make_vec_env(env_name, num_envs, **(env_kwargs or {}))
     obs, masks = env.reset([seed_base + i for i in range(num_envs)])
 
+    # UNBIASED counting: take exactly `per_slot` episodes from EVERY env slot
+    # and wait for all slots to reach it. Counting the first-N-to-COMPLETE
+    # instead (the old behaviour) is biased toward FAST episodes -- losing runs
+    # die at ante 1 while wins take all 8 antes, so the quick finishers are
+    # mostly losses and the win rate reads far too low, worst for hard decks.
+    # Equal episodes per slot removes that completion-order bias.
+    per_slot = max(1, math.ceil(episodes / num_envs))
+    slot_count = [0] * num_envs
     returns, lengths, antes, wins = [], [], [], []
     policy.eval()
     for _ in range(max_steps):
@@ -55,14 +64,15 @@ def evaluate(
                 deterministic=deterministic,
             )
         obs, masks, _rew, _done, infos = env.step(actions_to_numpy(actions))
-        for info in infos:
-            if "episode" in info:
+        for i, info in enumerate(infos):
+            if "episode" in info and slot_count[i] < per_slot:
                 ep = info["episode"]
                 returns.append(ep["r"])
                 lengths.append(ep["l"])
                 antes.append(ep.get("ante", 0))
                 wins.append(ep.get("won", False))
-        if len(returns) >= episodes:
+                slot_count[i] += 1
+        if all(c >= per_slot for c in slot_count):
             break
 
     returns, antes = np.array(returns), np.array(antes)
