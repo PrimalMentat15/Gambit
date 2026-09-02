@@ -2139,6 +2139,12 @@ impl Run {
         self.dollars
     }
 
+    /// Dollars above which interest no longer accrues ($25 in vanilla) -- cash
+    /// held past it earns nothing, so it is the natural "dead money" threshold.
+    pub fn interest_cap(&self) -> i64 {
+        self.interest_cap
+    }
+
     /// `G.GAME.chips` scored against the current blind.
     pub fn chips(&self) -> f64 {
         self.chips

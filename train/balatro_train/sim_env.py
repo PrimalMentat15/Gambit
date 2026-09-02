@@ -64,6 +64,9 @@ class SimBalatroEnv:
     def set_shaping_beta(self, beta: float) -> None:
         self._env.set_shaping_beta(float(beta))
 
+    def set_cash_beta(self, cash_beta: float) -> None:
+        self._env.set_cash_beta(float(cash_beta))
+
     def set_win_ante(self, win_ante: int) -> None:
         """Curriculum knob: episodes win (+15, ``info['episode']['won']``)
         once the boss of ante ``win_ante`` is defeated (8 = the real win).

@@ -338,12 +338,14 @@ impl EnvSlot {
         env_idx: usize,
         row: &ActionRow,
         beta: f64,
+        cash_beta: f64,
         strict: bool,
     ) -> Result<(f32, bool, Option<Episode>), String> {
         self.step_with_pool(
             env_idx,
             row,
             beta,
+            cash_beta,
             strict,
             None,
             0.0,
@@ -353,11 +355,13 @@ impl EnvSlot {
 
     /// `step` with snapshot start-state mixing on auto-reset (see
     /// `begin_episode`).
+    #[allow(clippy::too_many_arguments)]
     pub fn step_with_pool(
         &mut self,
         env_idx: usize,
         row: &ActionRow,
         beta: f64,
+        cash_beta: f64,
         strict: bool,
         pool: Option<&SnapshotPool>,
         snapshot_fraction: f64,
@@ -371,6 +375,7 @@ impl EnvSlot {
             row,
             &self.shop_slots,
             beta,
+            cash_beta,
             i64::from(self.win_ante),
         )?;
         self.ep_len += 1;

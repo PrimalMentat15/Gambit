@@ -153,6 +153,10 @@ class ShapingConfig:
 
     beta: float = 1.0
     anneal: ShapingAnnealConfig = field(default_factory=ShapingAnnealConfig)
+    #: m9 dead-cash potential scale (0 = off). Per-dollar reward for spending
+    #: idle cash above the interest cap ($25) in ante >= 5; policy-invariant
+    #: (potential-based), so keep it tiny -- ~1e-3 -- as a nudge, not a driver.
+    cash_beta: float = 0.0
 
 
 @dataclass

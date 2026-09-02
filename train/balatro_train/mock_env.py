@@ -509,6 +509,10 @@ class MockBalatroEnv:
     def set_shaping_beta(self, beta: float) -> None:
         self._beta = float(beta)
 
+    def set_cash_beta(self, cash_beta: float) -> None:
+        # Mock reward has no economy term; store for parity with the sim env.
+        self._cash_beta = float(cash_beta)
+
     def set_win_ante(self, win_ante: int) -> None:
         """Curriculum knob (see env_api docstring): applies at each env's
         NEXT (auto-)reset; a full ``reset()`` applies it everywhere."""

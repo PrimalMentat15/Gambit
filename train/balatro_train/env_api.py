@@ -176,6 +176,10 @@ class VecEnv(Protocol):
         """Set the shaping scale (reward terms 1-2). Trainer anneal hook."""
         ...
 
+    def set_cash_beta(self, cash_beta: float) -> None:
+        """Set the m9 dead-cash potential scale (0 = off)."""
+        ...
+
     def set_win_ante(self, win_ante: int) -> None:
         """Set the curriculum win ante (applies at next reset per env)."""
         ...
