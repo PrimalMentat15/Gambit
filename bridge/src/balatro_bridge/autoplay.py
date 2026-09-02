@@ -16,15 +16,21 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 import string
 import sys
 import time
 import traceback
 from pathlib import Path
+from typing import get_args
 
 from balatro_bridge.crossval import GameDriver, run_one
 from balatro_bridge.demo import narrating
 from balatro_bridge.paths import BOTRUN_REQUEST_FILE as DEFAULT_REQUEST_FILE
+from balatro_bridge.types import Deck as _DeckT, Stake as _StakeT
+
+VALID_DECKS = frozenset(get_args(_DeckT))
+VALID_STAKES = frozenset(get_args(_StakeT))
 
 
 def random_seed() -> str:
@@ -32,9 +38,35 @@ def random_seed() -> str:
     return "".join(rng.choices(string.digits + string.ascii_uppercase, k=8))
 
 
+def parse_marker(text: str) -> tuple[str, str]:
+    """The BotRun mod writes '<DECK> <STAKE>' into the request marker. Tolerate
+    an old timestamp-only marker (pre-picker mod) by falling back to Red/White,
+    and reject any unknown name the same way."""
+    toks = text.replace("\n", " ").split()
+    deck = toks[0].upper() if toks else ""
+    stake = toks[1].upper() if len(toks) > 1 else ""
+    return (deck if deck in VALID_DECKS else "RED",
+            stake if stake in VALID_STAKES else "WHITE")
+
+
+def resolve_ckpt(path_str: str) -> str:
+    """A directory resolves to its newest ckpt_<step>.pt (highest step), so the
+    daemon can be pointed at a run dir and always play the latest checkpoint."""
+    p = Path(path_str)
+    if p.is_dir():
+        ckpts = list(p.glob("ckpt_*.pt"))
+        if not ckpts:
+            raise SystemExit(f"no ckpt_*.pt files in {p}")
+        latest = max(ckpts, key=lambda x: int(re.search(r"ckpt_(\d+)", x.name).group(1)))
+        print(f"latest ckpt in {p}: {latest.name}", flush=True)
+        return str(latest)
+    return path_str
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ckpt", required=True, help="trained policy .pt")
+    ap.add_argument("--ckpt", required=True,
+                    help="trained policy .pt, or a run dir (uses its newest ckpt_*.pt)")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=12346)
@@ -45,7 +77,7 @@ def main() -> int:
 
     from balatro_bridge.crossval import make_ckpt_policy
 
-    policy_fn = narrating(make_ckpt_policy(args.ckpt, args.device))
+    policy_fn = narrating(make_ckpt_policy(resolve_ckpt(args.ckpt), args.device))
     game = GameDriver(args.host, args.port)
     game.client.health()
 
@@ -59,15 +91,20 @@ def main() -> int:
         if not args.request_file.exists():
             time.sleep(1.0)
             continue
+        try:
+            marker = args.request_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            marker = ""
         args.request_file.unlink(missing_ok=True)
+        deck, stake = parse_marker(marker)
         seed = random_seed()
-        print(f"\n=== BOT RUN requested: seed {seed}, Red Deck / White Stake ===\n",
+        print(f"\n=== BOT RUN requested: seed {seed}, {deck} Deck / {stake} Stake ===\n",
               flush=True)
         try:
             res = run_one(
                 seed, game, "ckpt", max_antes=8, max_steps=args.max_steps,
                 reports_dir=reports_dir, continue_on_divergence=True,
-                policy_fn=policy_fn,
+                policy_fn=policy_fn, deck=deck, stake=stake,
             )
             won = res.get("ante", 0) > 8
             print(f"\n=== {'VICTORY!' if won else 'Run over.'} status={res['status']} "

@@ -23,6 +23,7 @@ pub struct BalatroVecEnv {
     slots: Vec<EnvSlot>,
     num_envs: usize,
     beta: f64,
+    cash_beta: f64,
     strict: bool,
     win_ante: u8,
     /// Snapshot start-state mixing (M3): one shared pool + the probability
@@ -261,6 +262,7 @@ impl BalatroVecEnv {
             slots: Vec::new(),
             num_envs,
             beta: 1.0,
+            cash_beta: 0.0,
             strict,
             win_ante,
             pool: None,
@@ -287,6 +289,12 @@ impl BalatroVecEnv {
 
     fn set_shaping_beta(&mut self, beta: f64) {
         self.beta = beta;
+    }
+
+    /// Scale of the m9 dead-cash potential (0 = off, the default). Nudges the
+    /// policy to spend idle cash above the interest cap in late antes.
+    fn set_cash_beta(&mut self, cash_beta: f64) {
+        self.cash_beta = cash_beta;
     }
 
     /// The deck every env resets to (see `set_deck_distribution` to mix).
@@ -450,6 +458,7 @@ impl BalatroVecEnv {
         self.check_started()?;
         let rows = parse_actions(actions, self.num_envs)?;
         let beta = self.beta;
+        let cash_beta = self.cash_beta;
         let dist = &self.dist;
         let strict = self.strict;
         let pool = self.pool.clone();
@@ -462,8 +471,16 @@ impl BalatroVecEnv {
                 .zip(rows.par_iter())
                 .enumerate()
                 .map(|(i, (slot, row))| {
-                    let (reward, done, info) =
-                        slot.step_with_pool(i, row, beta, strict, pool.as_deref(), fraction, dist)?;
+                    let (reward, done, info) = slot.step_with_pool(
+                        i,
+                        row,
+                        beta,
+                        cash_beta,
+                        strict,
+                        pool.as_deref(),
+                        fraction,
+                        dist,
+                    )?;
                     Ok((reward, done, info, slot.observe(), slot.masks))
                 })
                 .collect()
@@ -623,14 +640,26 @@ pub struct CrossvalRun {
 #[pymethods]
 impl CrossvalRun {
     #[new]
-    fn new(seed: &str) -> PyResult<Self> {
+    #[pyo3(signature = (seed, deck="RED", stake="WHITE"))]
+    fn new(seed: &str, deck: &str, stake: &str) -> PyResult<Self> {
         if seed.is_empty() || seed.len() > 8 || !seed.bytes().all(|b| b.is_ascii_alphanumeric()) {
             return Err(PyValueError::new_err(format!(
                 "seed must be 1-8 alphanumeric chars, got {seed:?}"
             )));
         }
+        let deck_up = deck.to_uppercase();
+        let stake_up = stake.to_uppercase();
+        let deck = crate::export::deck_from_name(&deck_up)
+            .ok_or_else(|| PyValueError::new_err(format!("unknown deck {deck:?}")))?;
+        let stake = crate::export::stake_from_name(&stake_up)
+            .ok_or_else(|| PyValueError::new_err(format!("unknown stake {stake:?}")))?;
+        let config = balatro_core::config::RunConfig {
+            deck,
+            stake,
+            ..balatro_core::config::RunConfig::default()
+        };
         Ok(CrossvalRun {
-            run: balatro_core::run::Run::new(&seed.to_uppercase()),
+            run: balatro_core::run::Run::with_config(&seed.to_uppercase(), config),
         })
     }
 

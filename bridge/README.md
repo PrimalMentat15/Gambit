@@ -241,24 +241,41 @@ PQD3RI3I). `GameDriver` sizes the wait from the sim's expected payout.
 ### In-game BOT RUN button
 
 `mods/BotRun/` is a tiny Steamodded mod (auto-linked into the vanilla
-profile by `balatro-bridge-launch`) that adds a green **BOT RUN** button to
-the main menu. It writes a request marker via love.filesystem; the autoplay
-daemon answers it:
+profile by `balatro-bridge-launch`) that adds a **DECK** / **STAKE** picker and
+a green **BOT RUN** button to the main menu. Cycle the pickers to any of the
+15 decks / 8 stakes, click BOT RUN, and the daemon starts a fresh
+**random-seed** run of exactly that deck/stake:
 
 ```bash
-balatro-bridge-autoplay --ckpt ../train/runs/cloud_mirror/m5e2/ckpt_4000317440.pt
+balatro-bridge-autoplay --ckpt ../train/runs/m9b
 ```
 
-Leave the daemon running and click BOT RUN whenever — each click starts a
-fresh **random-seed** Red Deck / White Stake run played by the policy
-(~71% of them are wins). Clicks with no daemon running are harmless no-ops;
+`--ckpt` accepts either a checkpoint file or a **run directory** (resolves to
+its highest-numbered `ckpt_*.pt`, so it always watches "however far this run
+has trained so far" without hand-copying a filename each session). Leave the
+daemon running and click BOT RUN whenever — the button writes
+`"<DECK> <STAKE>"` (e.g. `"PLASMA GOLD"`) into the request marker; an old
+timestamp-only marker or an unrecognized name falls back to Red/White rather
+than crashing the daemon. Clicks with no daemon running are harmless no-ops;
 clicks while a run is playing are ignored.
 
-The panel also has **4X / 8X / 16X** speed buttons — the vanilla settings UI
-caps game speed at 4x, but the engine takes any multiplier, so click 8X/16X
-before BOT RUN to watch runs fast. Session-only (a game restart returns to
-the boot default); for a persistent default launch with e.g.
-`balatro-bridge-launch -- --gamespeed 16`.
+**Fidelity caveat:** P5 cross-validation (below) only ever covered Red/White
+at antes 1-4. Watching another deck/stake is itself a live fidelity check —
+divergences on decks/antes outside that validated range are expected and get
+reported, not silently hidden; see `DECISIONS.md` "Live bridge: deck/stake
+selection" for two found so far (a ZODIAC ante-1 over-score, a Flint-boss
+scoring gap around ante 6-7).
+
+The panel also has **8X / 16X / 32X / 64X** speed buttons. Under balatrobot
+the real speed lever is the game's **frame rate**, not `GAMESPEED` — balatrobot
+patches `love.update` to a fixed `dt = 1/60` per rendered frame, and most
+animation waits scale by `GAMESPEED` on a clock that also scales by
+`GAMESPEED`, so the two cancel and raising `GAMESPEED` alone barely changes
+anything visible (this is why the old 4X/8X/16X buttons looked identical to
+each other). The buttons now set `G.FPS_CAP = 60 * N` alongside `GAMESPEED`,
+which actually moves wall-clock speed — bounded by how many FPS the machine
+can render (balatrobot already strips shadows/bloom/CRT for exactly this).
+Session-only (a game restart returns to the boot default).
 
 Intervening in a bot-driven run (clicking cards / quitting mid-action) can
 hard-crash the modded game — balatrobot mutates the hand concurrently with
@@ -280,12 +297,10 @@ the fastest setting the vanilla options menu offers and is the pace to use.
 balatro-bridge-launch
 ```
 
-The BotRun panel's **8X / 16X** buttons exist for unattended runs and are worth
-avoiding while watching: past 4x the animations blur together, and the engine
-caps the real speed-up anyway. Two engine paths ignore the multiplier entirely —
-`EventManager:update` runs at most one blocking event per 1/60 s of **real**
-time regardless of `GAMESPEED`, and `Moveable:move` is never scaled at all — so
-16x buys far less than the number suggests while making the run unwatchable.
+The BotRun panel's **8X-64X** buttons (now driving `G.FPS_CAP`, see above —
+they genuinely speed the game up) exist for unattended runs and are worth
+avoiding while watching: past 4x the animations blur together into
+illegibility, even though the engine really is running faster underneath.
 
 ## First live smoke test (run by a human / later phase — not automated here)
 
@@ -329,7 +344,8 @@ Useful `serve` flags (CLI reference): `--fast` (10x speed), `--headless`,
 ## P5 cross-validation harness (`balatro-crossval`)
 
 Drives the SAME seeded run in the Rust sim (`balatro_sim.CrossvalRun`,
-direct Run-level interface added in P5) and the live game, applies a
+direct Run-level interface added in P5; takes optional `deck` / `stake` name
+args, default `"RED"` / `"WHITE"`) and the live game, applies a
 deterministic scripted policy chosen from the SIM's legal-action set,
 mirrors each action onto balatrobot, and diffs the full normalized state
 after every action. Divergences dump repro bundles to

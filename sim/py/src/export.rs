@@ -353,6 +353,26 @@ fn export_stake_name(s: Stake) -> &'static str {
     }
 }
 
+/// Parse a deck name (the form `export_deck_name` emits: "RED", "PLASMA", ...)
+/// back to a `Deck`. Built from the forward map so it can never drift from it.
+/// Lets CrossvalRun (and the live bridge) start any deck by name. Only the
+/// feature-gated `python` module consumes it, so gate it too or it is dead code
+/// in the default (no-python) build the sim gates run.
+#[cfg(feature = "python")]
+pub(crate) fn deck_from_name(name: &str) -> Option<Deck> {
+    (0..15)
+        .filter_map(Deck::from_index)
+        .find(|&d| export_deck_name(d) == name)
+}
+
+/// Parse a stake name ("WHITE", "GOLD", ...) back to a `Stake`.
+#[cfg(feature = "python")]
+pub(crate) fn stake_from_name(name: &str) -> Option<Stake> {
+    (1..=8)
+        .filter_map(Stake::from_level)
+        .find(|&s| export_stake_name(s) == name)
+}
+
 pub fn state_json(run: &Run) -> Value {
     let mut root = Map::new();
     root.insert("state".into(), json!(state_name(run.state())));

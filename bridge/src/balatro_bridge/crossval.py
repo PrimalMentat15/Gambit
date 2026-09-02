@@ -362,10 +362,10 @@ def diff_states(sim: Any, game: Any, path: str = "") -> list[dict]:
 
 
 class SimDriver:
-    def __init__(self, seed: str) -> None:
+    def __init__(self, seed: str, deck: str = "RED", stake: str = "WHITE") -> None:
         import balatro_sim
 
-        self.run = balatro_sim.CrossvalRun(seed)
+        self.run = balatro_sim.CrossvalRun(seed, deck, stake)
 
     def state(self) -> dict:
         return json.loads(self.run.state_json())
@@ -396,12 +396,12 @@ class GameDriver:
 
         self.client = BalatroBridgeClient(host=host, port=port, timeout=timeout)
 
-    def start(self, seed: str) -> None:
+    def start(self, seed: str, deck: str = "RED", stake: str = "WHITE") -> None:
         gs = self.client.gamestate()
         if gs.get("state") != "MENU":
             self.client.menu()
             self._wait_state({"MENU"})
-        self.client.start(deck="RED", stake="WHITE", seed=seed)
+        self.client.start(deck=deck, stake=stake, seed=seed)
 
     def menu(self) -> None:
         try:
@@ -519,8 +519,8 @@ class SimAsGameDriver:
     def __init__(self) -> None:
         self.sim: SimDriver | None = None
 
-    def start(self, seed: str) -> None:
-        self.sim = SimDriver(seed)
+    def start(self, seed: str, deck: str = "RED", stake: str = "WHITE") -> None:
+        self.sim = SimDriver(seed, deck, stake)
 
     def menu(self) -> None:
         pass
@@ -739,9 +739,11 @@ def run_one(
     reports_dir: Path,
     continue_on_divergence: bool,
     policy_fn=None,
+    deck: str = "RED",
+    stake: str = "WHITE",
 ) -> dict:
-    sim = SimDriver(seed)
-    game.start(seed)
+    sim = SimDriver(seed, deck, stake)
+    game.start(seed, deck, stake)
     policy = policy_fn or {
         "bot": bot_policy, "random": random_policy, "mixed": mixed_policy,
     }[policy_name]
@@ -753,7 +755,8 @@ def run_one(
     step = 0
     chips_offset = 0.0  # SMODS debuffed-hand quirk (module docstring)
     # `quirks` is shared by reference: appends show up in every return path.
-    result: dict[str, Any] = {"seed": seed, "policy": policy_name, "quirks": quirks}
+    result: dict[str, Any] = {"seed": seed, "policy": policy_name,
+                              "deck": deck, "stake": stake, "quirks": quirks}
 
     def compare(action: dict | None, sim_chips_before: float | None = None) -> list[dict]:
         nonlocal divergences, chips_offset
