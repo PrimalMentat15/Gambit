@@ -20,7 +20,9 @@ and run-control layer.
   updates, `torch.compile`, GPU-resident buffers).
 - **`bridge/`** — a client for [coder/balatrobot](https://github.com/coder/balatrobot) that drives
   the *real* game for evaluation and for the cross-validation harness (`balatro-crossval`) that
-  diffs sim vs. game state after every action of seeded runs.
+  diffs sim vs. game state after every action of seeded runs. An in-menu deck/stake picker plus a
+  BOT RUN button lets any checkpoint play any of the 15×8 grid live; speed buttons drive the
+  game's frame rate (the actual speed lever under balatrobot's fixed-timestep patch) up to 64×.
 - **`monitor/`** — a live PyQt dashboard plus a phone-checkable SSE web view, both reading the
   run's NDJSON event stream. Read-only *and* bounded-memory: start, stop or restart it mid-run
   without affecting training.

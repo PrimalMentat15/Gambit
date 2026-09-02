@@ -59,7 +59,16 @@ Most panels chart one series over time; two are worth calling out:
   number that means the same thing across the whole run.
 * **`deck_matrix`** (P7) -- one bar per *live* deck from the `deck_matrix_eval`
   event, coloured by win rate, so "which deck is the mixture lagging on" is a
-  glance. Empty until a run has the deck curriculum enabled.
+  glance. Empty until a run has the deck curriculum enabled. The event also
+  carries a `sampled_win_rate_by_deck` field (stochastic, alongside the
+  argmax the panel renders) that this panel currently ignores per the
+  stream's forward-compat rule -- a future panel could chart the argmax/
+  sampled gap as a brittleness signal. Note this eval is not cheap: fixing an
+  episode-counting bias in `evaluate()` (see `train/README.md` "Decks,
+  stakes...") made it correct but slower, since it now waits for the
+  slowest of `eval_num_envs` parallel episodes rather than the first ones to
+  finish -- a run with a small `eval_num_envs` will produce this panel's
+  data much sooner than one with a large one.
 
 ## Adding a panel
 

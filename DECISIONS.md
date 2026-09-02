@@ -1307,3 +1307,167 @@ as it is. Everything P7 builds -- deck/stake in the sim, the tiered deck
 curriculum, the per-deck eval matrix -- serves grid mastery and is untouched by
 this decision. The endless plumbing added in Stage 1 (`RunConfig.endless`) is
 left in place but inert; wiring it is a P8 task, against a P8 reward.
+
+---
+
+## Live bridge: deck/stake selection and real game speed under balatrobot
+
+*Recorded 2026-09-01.*
+
+**Decision:** extend the BOT RUN live-demo path (bridge + BotRun mod) so a
+trained checkpoint can be watched on any of the 15 decks / 8 stakes, not just
+Red/White, and fix the speed buttons, which had stopped doing anything once
+balatrobot was in the loop.
+
+**Deck/stake selection.** `balatro_sim.CrossvalRun` gained optional `deck` /
+`stake` name arguments (defaulting to `"RED"` / `"WHITE"`, so every prior
+caller is unaffected); `SimDriver` / `GameDriver` / `run_one` thread them
+through to `balatrobot_client.start`, which already accepted arbitrary
+deck/stake -- only the bridge's own driver hardcoded Red/White. The BotRun mod
+gained DECK and STAKE cycle-selectors next to the button; clicking BOT RUN
+writes `"<DECK> <STAKE>"` into the request marker (an old timestamp-only
+marker, or an unrecognized name, falls back to Red/White so a stale mod build
+degrades safely rather than crashing the daemon). `--ckpt` on
+`balatro-bridge-autoplay` also now accepts a run **directory**, resolving to
+its highest-numbered `ckpt_*.pt` -- watch "whatever the run has trained to
+so far" without hand-copying a filename each session.
+
+**Why the speed buttons did nothing.** They set `G.SETTINGS.GAMESPEED`, which
+is nearly a dead knob under balatrobot:
+
+1. balatrobot patches `love.update` to feed a **fixed `dt = 1/60` every
+   rendered frame** (`src/lua/settings.lua`), so wall-clock speed is set by
+   **frame rate**, not by GAMESPEED.
+2. Most of the game's animation waits are coded as `delay = base * GAMESPEED`
+   on a clock that itself advances at `dt * GAMESPEED`, so the two cancel --
+   those animations take a constant **number of frames** no matter what
+   GAMESPEED is set to.
+3. The frame rate is capped at `G.FPS_CAP`, which balatrobot defaults to
+   **60** (~1x real time) -- confirmed at `main.lua:986-987`, which sleeps to
+   hold that cap.
+
+So under balatrobot the real lever is `G.FPS_CAP`; GAMESPEED alone barely
+moved anything visible, which is exactly what was observed live (buttons up
+to 128x looked identical to 4x). Fixed by having the speed buttons set
+`G.FPS_CAP = 60 * N` alongside GAMESPEED, with tiers 8/16/32/64 (128 dropped --
+`60*64 = 3840` FPS is already past what a laptop can render, so higher tiers
+would just plateau at the hardware ceiling and look identical to each other,
+not to a bug).
+
+**Known cost, not yet paid down:** the bridge drives the live game *from the
+sim* (mirrored actions, state diffed after each one), and P5 cross-validation
+only ever covered Red/White at antes 1-4. Live runs on other decks/stakes
+surfaced real sim-vs-game scoring divergences on ZODIAC -- once at ante 1
+(sim over-scored a blind and thought it cleared when the live game hadn't),
+once around ante 6-7 against The Flint (sim fell an ante behind, likely a
+Flint chip/mult-halving scoring gap). Both are genuine P5 debt on grid decks
+and bosses, not bridge or model bugs -- the new deck-picker's whole point is
+that it surfaces exactly this. Reopening P5 crossval for the grid (not just
+Red/White) is the natural next step before trusting absolute win rates on
+decks other than Red.
+
+---
+
+## M9: reward levers for late-game cash utilization, and the eval win-rate bug they surfaced
+
+*Recorded 2026-09-01.*
+
+**Motivating observation (live play):** watching a trained checkpoint via the
+bridge showed it hoarding cash in late antes -- sitting on $40+ instead of
+rerolling the shop for a better joker, even where a stronger engine could
+plausibly flip a marginal loss into a win.
+
+**Diagnosis: not a hoarding bug, a reward-shape gap.** The per-step reward
+(`sim/py/src/action.rs::apply`) caps hand-progress reward at
+`min(chips/req, 1)` -- clearing a blind by 10x pays the same as clearing it
+by 1 chip ("overkill earns 0"). There is no dollars/economy term at all. So a
+stronger engine beyond "enough to clear" is worth exactly nothing to the
+reward *unless* it flips an actual loss into a win -- the policy isn't
+malfunctioning, surplus cash genuinely has zero marginal value to its
+objective on runs it already wins. Two tempting direct fixes were rejected as
+reward-hacking / scope creep: rewarding the reroll action itself invites the
+policy to farm rerolls without playing; rewarding raw uncapped chips
+re-imports naneinf's ~300-orders-of-magnitude score scale into the bounded
+ante-8 objective (that scale problem is exactly why P8 is a separate reward
+file -- see "Phase 7 scope" above).
+
+**Lever 1 -- dead-cash potential (`shaping.cash_beta`, default 0 = off).** A
+potential-based shaping term, `cash_beta * (dead_cash_before -
+dead_cash_after)` where `dead_cash = max(0, dollars - interest_cap)`
+($25 in vanilla -- cash above it earns no interest, so it is the natural
+"idle" threshold), gated to ante >= 5 so it never fights the tight early-game
+economy. Being potential-based, it telescopes across a run to
+`-cash_beta * (dead cash held at episode end)` and is provably
+policy-invariant (Ng et al. shaping theorem) -- it cannot change the optimal
+policy or be farmed by an action that does not reduce dead cash (a reroll
+that fails to spend money earns nothing from this term). Kept deliberately
+tiny (1e-3/dollar, so ~$15 idle = 0.015 reward against the +15 win bonus) so
+it is a tie-breaking nudge toward spending, never a driver that could make
+the policy throw a winnable run to chase it.
+
+**Lever 2 -- exploration (`ppo.ent_coef`, 0.01 -> 0.025).** The resumed
+policy (from m7/m8_seed) is already converged; its argmax has likely frozen
+out low-probability-but-sometimes-correct actions like rerolling. Raising
+entropy is the on-policy-correct way to re-open that exploration (a literal
+epsilon-greedy override would be off-policy and break PPO's on-policy
+assumption) so the +15 win reward -- which already credits a
+reroll-into-better-joker path once it is *found* -- has a chance to find it
+from a policy that stopped looking. Purely a training-time knob; adds no
+runtime reward-computation cost.
+
+**The eval win-rate bug this surfaced (unrelated to the levers, more
+consequential than either).** m9's live deck-matrix showed Black Deck
+collapsing to ~0.0 win rate mid-run -- alarming, and initially misdiagnosed
+(m8's memory) as argmax brittleness. Root cause, found by re-running
+`evaluate()` (`train/balatro_train/eval.py`) directly against a saved
+checkpoint at varying episode counts: it counted the first N episodes to
+**complete**, not N episodes played fairly. Losing runs finish in ~150 steps
+on average; winning ante-8 runs take ~250-350 (observed max: ~4,700, a long
+tail). Stopping the count at the first completions is therefore structurally
+biased toward fast losses -- worst for exactly the hardest decks, where wins
+are both rarer and slower. Reproduced directly: the SAME checkpoint's Black
+win rate read between 0.0 and 0.15 depending only on how many episodes
+`evaluate()` was asked to count, while the *training* cohort EMA (which
+counts every episode as it naturally finishes over a long rollout, so it
+carries no such bias) had read a stable ~0.23-0.28 the whole time. **The
+cohort was right; every `evaluate()`-based number -- promotion eval,
+milestone eval, the deck matrix -- was reading low, worst on hard decks.**
+This retroactively corrects the earlier "Black argmax collapse" diagnosis
+from the m8 test-run investigation: there was no collapse, only this same
+counting bias at small episode counts.
+
+**Fix:** `evaluate()` now takes an equal number of episodes from **every**
+env slot and waits for all slots to finish, instead of stopping at the first
+N completions project-wide. This removes the completion-order bias
+entirely -- confirmed episode-count-independent post-fix -- at a real cost:
+the call now blocks on whichever slot is slowest, and a long tail exists (the
+~4,700-step outlier above). Measured live at `eval_num_envs=512`: a single
+promotion eval ~43 min, a milestone eval ~41 min, and the 30-pass deck matrix
+(15 decks x argmax + sampled) ~5.4 hours -- an eval cost that can dwarf the
+training between milestones on a modest local box. Mitigated (not solved) by
+shrinking `eval_num_envs` (fewer parallel slots = a lower chance any one of
+them is a straggler -- the dominant lever, more effective than trimming
+episode counts) and widening `eval_every_steps` / `milestone_every_steps`.
+A structural fix -- capping any one episode's step budget during eval and
+counting a cutoff as a loss -- would bound worst-case wall-clock
+unconditionally but was not implemented; flagged as a follow-up if the
+shrunk-envs mitigation still isn't enough on the target hardware.
+
+**m9b's mitigated eval schedule**, applied mid-run once the ~1.5h/cycle stall
+was observed live (`train/configs/m9b.yaml`): `eval_num_envs` 512 -> 128 (the
+main lever), `promotion_eval_episodes` 1024 -> 256, `milestone_episodes` 1536
+-> 256, `eval_every_steps` 10M -> 20M, `milestone_every_steps` 20M -> 40M.
+Training `env.num_envs` (4096, separate from the eval knobs) was left
+unchanged -- collection throughput was never the bottleneck (~3.5k sps at the
+point of the stall); the fix targets eval wall-clock only.
+
+**Consequence:** m9 (the run that first exercised both levers, under the
+biased eval) does not represent trustworthy comparison data -- its
+own training was fine (the cohort EMA it logged is correct; only its
+*reported* eval numbers were wrong), but its deck-matrix readout cannot be
+used to judge the levers, and no clean lever-off baseline exists under the
+fixed eval either. **m9b** restarts the same lever configuration from the
+`m8_seed` checkpoint (step 0) purely so the whole run is measured with the
+corrected, trustworthy `evaluate()` from the start -- see
+`train/configs/m9b.yaml` and the m8->m9->m9b write-up for what that data
+does and does not show at the point m9b was last checked.

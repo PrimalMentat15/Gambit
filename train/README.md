@@ -102,6 +102,11 @@ than guessing. Details and the measurements: `DECISIONS.md` Phase 7 Stage 0.
   no loss penalty; `set_shaping_beta` scales only the shaping terms.
   Episode `info["episode"] = {r, l, ante, won}`; a win reports the
   post-boss ante (9).
+* **Dead-cash potential** (m9, `set_cash_beta`, default 0 = off):
+  `cash_beta·Δmax(0, dollars − interest_cap)`, gated to ante ≥ 5 —
+  potential-based (telescopes to `-cash_beta·`(idle cash at episode end),
+  provably policy-invariant), a tiny nudge toward spending surplus cash
+  rather than a driver. See `DECISIONS.md` "M9: reward levers".
 * **snapshot(i) / restore(i, bytes)**: full bincode serialization of the
   `Run` (RNG stream states included) + episode stats + the env's seed
   stream — restorable across processes, bit-identical continuation.
@@ -159,10 +164,30 @@ joker/shop feature vectors.
 enabled: decks unlock in tiers by distance from Red (`tier_steps`), and among
 the live decks the sampling weight leans toward the weakest
 (`(1 - winrate + floor) ** alpha`) with a `uniform_mix` floor so none starves.
-Win rates come from the per-`(deck, stake)` EMA the rollout loop maintains.  A
+Win rates come from the per-`(deck, stake)` EMA the rollout loop maintains
+(`PPOTrainer.ep_wins_by_cohort` / `ep_count_by_cohort`) — **persisted in the
+checkpoint** (`save_checkpoint` / `load_checkpoint`) so a resume continues the
+same sampling mixture instead of re-deriving it from an empty EMA, which would
+otherwise perturb which decks get emphasized right after every resume.  A
 per-deck eval matrix (`deck_matrix_eval` event, one series per live deck) runs
-at the milestone cadence.  The schedule is a pure function
-(`deck_curriculum.deck_weights`), unit-tested without torch.
+at the milestone cadence, in **both** argmax and sampled mode
+(`win_rate_by_deck` / `sampled_win_rate_by_deck`, plus a per-deck
+`deck_matrix/argmax_gap_deck{d}` TB scalar = sampled − argmax) — a large gap
+flags a deck whose greedy policy sits on a knife-edge relative to its sampled
+behavior.  The schedule is a pure function (`deck_curriculum.deck_weights`),
+unit-tested without torch.
+
+**`evaluate()`'s episode counting is unbiased but NOT cheap** (`eval.py`, fixed
+2026-09-01 — see `DECISIONS.md` "M9" for the full bug writeup): it takes an
+equal number of episodes from every env slot and waits for the slowest one,
+rather than stopping at the first N episodes to complete (which was biased
+toward fast losses and read hard-deck win rates far too low). The correct
+count costs real wall-clock — a long-tailed episode-length distribution means
+one unlucky slot can stall an entire eval call, and the deck matrix makes 30
+such calls per milestone. **`eval_num_envs` is the primary lever if evals are
+stalling training**: fewer parallel slots means a lower chance any one of them
+is a straggler, which matters far more than trimming episode counts. Widen
+`eval_every_steps` / `milestone_every_steps` as a second lever.
 
 ## Snapshot start-state mixing (M3 backward curriculum)
 
@@ -261,12 +286,12 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
 | `balatro_train/policy.py`   | Entity-token transformer (3×128 pre-LN), pointer heads, autoregressive card head w/ GRU, value head; exact −inf masking; one shared code path for sampling and PPO recompute. |
 | `balatro_train/buffer.py`   | Rollout buffer (dict obs + stored masks + composite actions), GAE, running return normalizer. |
 | `balatro_train/ppo.py`      | Train loop (`python -m balatro_train.ppo`), TB logging, checkpointing (policy+optimizer+normalizer), `--resume`, snapshot-fraction anneal. |
-| `balatro_train/eval.py`     | Fixed-seed eval protocol skeleton. |
+| `balatro_train/eval.py`     | Fixed-seed eval (`evaluate()`): equal episodes per env slot, argmax or stochastic. Used by the curriculum's promotion/milestone evals and the per-deck matrix — see "Decks, stakes, and the deck-mixture curriculum" for the counting-bias fix and its wall-clock cost. |
 | `balatro_train/snapshot_pool.py` | Snapshot pool file writer/reader + manifest helpers (Rust reader: `sim/py/src/pool.rs`). |
 | `balatro_train/gen_snapshots.py` | Pool generation tool (bot and/or policy-checkpoint driven, stratified per-ante quotas). |
 | `balatro_train/telemetry/` | NDJSON event stream (`events.jsonl`) + `RunSession` (run directory, `meta.json`, stop file). Stdlib only. |
 | `balatro_train/tools/`     | `killrun` (graceful stop / force kill from the terminal), process helpers, event-stream reader. |
-| `configs/`                  | `debug.yaml` (tiny/CPU), `default.yaml` (plan hypers), `m1.yaml` (first real run), `m3.yaml` (m1 + snapshot mixing + resume), `m3_fast.yaml` (m3 + perf toggles; see "Throughput"). |
+| `configs/`                  | `debug.yaml` (tiny/CPU), `default.yaml` (plan hypers), `m1.yaml` (first real run), `m3.yaml` (m1 + snapshot mixing + resume), `m3_fast.yaml` (m3 + perf toggles; see "Throughput"). P7 deck-mixture: `m8.yaml` / `m8_cloud.yaml` (local 4050 / cloud 5090 tunings, decks off `runs/m8_seed.pt`), `m9.yaml` (m8 + the two reward levers — see `DECISIONS.md` "M9"), `m9b.yaml` (m9, restarted from `m8_seed` step 0 under the fixed `evaluate()` for trustworthy comparison data; inline `>>> TURN DOWN … if:` comments next to every parameter that can go wrong). |
 | `scripts/bench_ppo.py`      | Wall-clock phase breakdown + torch.profiler bench of collect/update (supports `--set path=value` config overrides). |
 | `scripts/migrate_contract_p7.py` | One-shot checkpoint migration to the P7 observation contract: zero-pads the widened `joker_proj`/`shop_proj` inputs and remaps `slot_embed` for the raised slot caps. `--verify` asserts the migrated policy encodes pre-P7 states identically. Idempotent. |
 | `scripts/replay_failures.py` | Load a checkpoint and dump per-action traces for episodes matching a failure filter (`ante1-small`, `ante1-boss`, `any-loss`, `runaway`) -- the cards it selected and the chips each hand scored, plus a per-play control aggregate. Read-only; used to diagnose *what* the policy does in a failure mode, not just how often. |
@@ -285,6 +310,7 @@ and `monitor/analysis.py` read; none of them import this package's trainer.
 | `episode_end` | each finished episode | return, length, terminal ante, won, whether it started from a snapshot |
 | `promotion_eval` / `curriculum_promotion` | curriculum checks | win rate at the current goal, threshold, ladder move |
 | `milestone_eval` | full-game eval | ante-8 argmax win rate, ante histogram |
+| `deck_matrix_eval` | after milestone, if deck curriculum enabled | per-deck argmax win rate (`win_rate_by_deck`) and sampled win rate (`sampled_win_rate_by_deck`) — the gap flags argmax brittleness |
 | `checkpoint_saved`, `session_end` | as named | path, step, exit status |
 
 Two rules keep it cheap. `emit()` never blocks — a background thread drains a
