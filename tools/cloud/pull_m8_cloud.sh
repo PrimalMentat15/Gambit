@@ -18,8 +18,8 @@ set -u
 HOST=180.189.55.43
 PORT=21546
 KEY="$HOME/.ssh/id_ed25519"
-REMOTE_DIR=/workspace/gambit/train/runs/m8_cloud_test
-LOCAL_DIR="$(cd "$(dirname "$0")/../.." && pwd)/train/runs/m8_cloud_test"
+REMOTE_DIR=/workspace/gambit/train/runs/m8_cloud
+LOCAL_DIR="$(cd "$(dirname "$0")/../.." && pwd)/train/runs/m8_cloud"
 INTERVAL="${1:-300}"   # seconds between cycles (default 5 min); pass an arg to override
 
 SSH=(ssh -p "$PORT" -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30)

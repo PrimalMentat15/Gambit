@@ -1,0 +1,140 @@
+# M9b: clean restart of the m9 lever experiment on the REWORKED eval.
+#
+# m9's deck matrix was unreadable because evaluate() counted the first-N
+# episodes to COMPLETE -- biased toward fast losses, so hard decks (Black) read
+# ~0 when their true win rate is ~0.25 (the training cohort was right all along).
+# evaluate() is now unbiased (equal episodes per env slot). m9b restarts the
+# experiment from the same rebased seed so the whole run is measured correctly:
+#
+#   python -m balatro_train.ppo --config configs/m9b.yaml --resume runs/m8_seed.pt
+#
+# A/B: m9b (levers ON: dead-cash potential + higher entropy) vs m8 (levers OFF),
+# both from m8_seed, now both judged by the fixed eval. Training itself was never
+# affected by the eval bug (the cohort EMA is unbiased) -- only the reported
+# numbers were. Scope: decks, White stake. naneinf is P8.
+#
+# Fidelity caveat still stands: the sim mis-scores some high-ante bosses /
+# non-Red decks (ZODIAC live-run divergences), so absolute win rates off
+# Red/White remain provisional until P5 crossval is reopened for the grid.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  # >>> TURN DOWN (2048 / 1024 / 512) if: CUDA OOM at startup, host RAM /
+  #     pagefile thrash (buffer is on CPU, scales with num_envs), or sps is low /
+  #     the laptop is thermal-throttling. This is the #1 knob if the box strains.
+  num_envs: 4096
+  seed: 0
+  deck: 0
+  stake: 1
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 4000000000
+  rollout_len: 128
+  # 4096 x 128 = 524288 per iteration; 4096 -> 128 minibatches. Must divide
+  # 524288 (a power of two is safe).
+  # >>> TURN DOWN (2048 / 1024) if: OOM DURING THE UPDATE (not rollout).
+  #     auto_minibatch below already auto-halves this to fit, so only lower it
+  #     manually if you also turn auto_minibatch off.
+  minibatch_size: 4096
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  # LEVER 2: 0.025 vs m8's 0.01 -- more entropy to unfreeze shop/reroll
+  # exploration in the resumed (converged) policy.
+  # >>> TURN DOWN (0.015 / 0.01) if: win rate plateaus or dips and won't sharpen,
+  #     entropy (train.log `ent`) stays high / stops falling, or actions look too
+  #     random. This is the exploration lever -- lower = more decisive.
+  ent_coef: 0.025
+
+  # Constant lr, as m8: a decaying lr fights a deck mixture (see m8 header).
+  # >>> TURN DOWN (3e-5 / 2e-5) if: TRAINING GOES UNSTABLE -- KL (train.log `kl`)
+  #     spikes well above ~0.02, clipfrac climbs, loss blows up, or win rate
+  #     crashes suddenly. Lr is the first thing to cut on instability.
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: false          # TURN ON (true) only for a long stable run: ~1 min
+                          #   warmup, faster after. Off avoids compile flakiness.
+  buffer_device: cpu      # KEEP cpu on the 6 GB card (buffer in RAM). cuda is
+                          #   faster but needs the VRAM -- only if you have room.
+  auto_minibatch: true    # KEEP true -- the OOM safety net that shrinks the
+                          #   update minibatch at startup to fit VRAM.
+  fused_adam: true
+  pin_memory: false       # KEEP false -- turning it on pins host RAM and is what
+                          #   OOM'd the pagefile before. Only enable with spare RAM.
+
+curriculum:
+  enabled: true
+  start_ante: 8
+  ladder: [8]
+  promote_winrate: 0.7
+  # evaluate() is unbiased now (equal episodes per env slot), but that means it
+  # WAITS FOR THE SLOWEST SLOT -- one unlucky env stuck on a long/losing run
+  # can single-handedly stall the whole eval. Measured live: promotion eval
+  # ~43 min, milestone ~41 min, PLUS the deck matrix (30 evaluate() calls,
+  # argmax+sampled x15 decks) on top -- over 1.5h blocked every 10M steps.
+  # >>> TURN DOWN eval_num_envs (128) first -- fewer slots = fewer chances of an
+  #     unlucky straggler, so wall-clock drops much faster than episode counts
+  #     do. THEN drop promotion/milestone episodes toward eval_num_envs (1 ep/
+  #     slot). THEN raise *_every_steps if it's still too frequent. Training
+  #     num_envs (above) is a SEPARATE knob -- collection sps was fine (~3.5k);
+  #     do not lower it for this.
+  eval_every_steps: 20000000
+  promotion_eval_episodes: 256
+  eval_num_envs: 128
+  eval_seed_base: 1000000
+  milestone_every_steps: 40000000
+  milestone_episodes: 256
+
+deck_curriculum:
+  enabled: true
+  tier_steps: [0, 0, 0, 0]
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  enabled: false
+
+shaping:
+  beta: 0.1
+  anneal:
+    start_step: 0
+    end_step: 0
+    final_beta: 0.1
+  # LEVER 1: dead-cash potential, 1e-3/dollar. Potential-based (can't be farmed);
+  # nudges spending idle cash above the interest cap in ante >= 5.
+  # >>> TURN DOWN (0.0 = fully off) if: easy decks (Red/Blue) regress after this
+  #     is on, or the policy over-spends / reroll-churns late game. It is the
+  #     A/B variable vs m8, so this is the first thing to zero to isolate effects.
+  cash_beta: 0.001
+
+log:
+  run_name: m9b
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

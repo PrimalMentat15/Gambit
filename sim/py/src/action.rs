@@ -204,17 +204,28 @@ pub fn legalize_consumable_targets(run: &Run, key: &str, picks: &[usize]) -> Opt
 /// that defeats that ante's boss. Errors are internal invariant violations
 /// (a masked-legal action the sim rejected) and abort the step with a
 /// Python-side exception.
+/// Ante at/after which the dead-cash potential is active. Early antes have a
+/// tight economy where saving is correct, so the nudge only applies late.
+const CASH_ANTE_MIN: i64 = 5;
+
+/// Idle dollars: cash held above the interest cap ($25), which earns nothing.
+fn dead_cash(run: &Run) -> i64 {
+    (run.dollars() - run.interest_cap()).max(0)
+}
+
 pub fn apply(
     run: &mut Run,
     row: &ActionRow,
     slots: &[ShopSlotRef],
     beta: f64,
+    cash_beta: f64,
     win_ante: i64,
 ) -> Result<f64, String> {
     let t = row.action_type;
     let in_blind = run.state() == State::SelectingHand;
     let ante0 = run.ante();
     let req0 = run.blind_chips();
+    let dead0 = dead_cash(run);
     let phi0 = if in_blind && req0 > 0.0 {
         (run.chips() / req0).min(1.0)
     } else {
@@ -309,6 +320,15 @@ pub fn apply(
             }
             _ => {}
         }
+    }
+    // Dead-cash potential (m9): reward converting idle cash (above the interest
+    // cap) into purchases in the late game. It is the delta of a state potential
+    // Phi = -cash_beta*dead_cash, so it telescopes to -cash_beta*(dead cash held
+    // at run end) and is policy-invariant (cannot be farmed by rerolling: a
+    // reroll that does not lower dead cash earns nothing). Gated to
+    // ante >= CASH_ANTE_MIN so it never fights the tight early-game economy.
+    if cash_beta != 0.0 && ante0 >= CASH_ANTE_MIN {
+        reward += cash_beta * (dead0 - dead_cash(run)) as f64;
     }
     Ok(reward)
 }

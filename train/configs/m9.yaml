@@ -1,0 +1,122 @@
+# M9 (local): m8's deck-mixture run PLUS two levers aimed at the "hoards cash,
+# never rerolls for better jokers" behaviour seen in live play. Tuned for the
+# local 6 GB 4050 (short experiment runs, not the full 4B). Resumes the same
+# rebased seed as m8:
+#
+#   python -m balatro_train.ppo --config configs/m9.yaml --resume runs/m8_seed.pt
+#
+# Lever 1 -- dead-cash potential (shaping.cash_beta): a tiny per-dollar reward
+#   for spending idle cash above the interest cap ($25) in ante >= 5. It is
+#   potential-based (delta of a state potential), so it telescopes to
+#   -cash_beta*(dead cash held at run end) and CANNOT change the optimal policy
+#   or be farmed by rerolling -- a nudge, not a driver. See action.rs / DECISIONS.
+# Lever 2 -- exploration (ppo.ent_coef): raised so the resumed policy, whose
+#   argmax has frozen out rerolling, re-explores the shop and can discover the
+#   reroll -> better-joker -> win path the +15 win reward already credits.
+#
+# CAVEAT: the sim mis-scores some high-ante bosses / non-Red decks (ZODIAC live
+# runs diverged), so absolute win rates off Red/White are not yet trustworthy;
+# read m9 as a RELATIVE (with-vs-without-levers) experiment until P5 crossval is
+# reopened for the grid. Scope: decks, White stake. naneinf is P8.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  # 512 for the 6 GB 4050; buffer_device: cpu keeps the rollout buffer in RAM.
+  num_envs: 4096
+  seed: 0
+  deck: 0
+  stake: 1
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 4000000000
+  rollout_len: 128
+  # 512 x 128 = 65536 per iteration; 2048 -> 32 minibatches. auto_minibatch
+  # probes down if 6 GB is tight.
+  minibatch_size: 4096
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  # LEVER 2: 0.025 vs m8's 0.01 -- more entropy to unfreeze shop/reroll
+  # exploration in the resumed (converged) policy. Constant for now; anneal back
+  # toward 0.01 once rerolling is being tried, if the extra entropy blunts
+  # sharpness elsewhere (a follow-up, not wired yet).
+  ent_coef: 0.025
+
+  # Constant lr, as m8: a decaying lr fights a deck mixture (see m8 header).
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: false
+  buffer_device: cpu
+  auto_minibatch: true
+  fused_adam: true
+  pin_memory: false
+
+curriculum:
+  enabled: true
+  start_ante: 8
+  ladder: [8]
+  promote_winrate: 0.7
+  # evaluate() is now unbiased (equal episodes per slot), so these set sample
+  # size, not bias -- but keep them >= eval_num_envs for tight per-deck
+  # estimates (episodes < num_envs would give just one episode/slot).
+  eval_every_steps: 10000000
+  promotion_eval_episodes: 1024
+  eval_num_envs: 512
+  eval_seed_base: 1000000
+  milestone_every_steps: 20000000
+  milestone_episodes: 1536
+
+deck_curriculum:
+  enabled: true
+  # All 15 decks live from step 0 (prioritized sampling toward the weakest),
+  # matching m8 -- so the deck matrix compares directly.
+  tier_steps: [0, 0, 0, 0]
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  enabled: false
+
+shaping:
+  # Progress/blind-clear shaping, constant 0.1 (m4->m8 regime).
+  beta: 0.1
+  anneal:
+    start_step: 0
+    end_step: 0
+    final_beta: 0.1
+  # LEVER 1: dead-cash potential. 1e-3/dollar -> 15 idle dollars = 0.015 reward,
+  # negligible against the +15 win, so it can never make the policy tank a run;
+  # it only breaks ties toward spending surplus. 0.0 = off (m8 behaviour).
+  cash_beta: 0.001
+
+log:
+  run_name: m9
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false
