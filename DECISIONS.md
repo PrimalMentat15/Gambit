@@ -1415,6 +1415,24 @@ reroll-into-better-joker path once it is *found* -- has a chance to find it
 from a policy that stopped looking. Purely a training-time knob; adds no
 runtime reward-computation cost.
 
+**Lever 2 as a CONSTANT was a mistake -- it must anneal.** m9b held
+`ent_coef` at 0.025 for the whole run, and it made entropy climb steadily
+(2.52 -> 2.78 over 160M steps) instead of falling as a sharpening policy's
+should. A high constant entropy bonus overpowers the policy gradient: it keeps
+flattening the action distribution faster than the policy sharpens it, and the
+*argmax* (the greedy policy every eval and the real deployment use) degrades in
+lockstep -- the deck matrix fell on **every one of the 15 decks**, mean argmax
+0.617 -> 0.544, ~7pp, purely from this (episode lengths ruled out the eval cap;
+the cohort/loss/KL were all stable). The lever did unfreeze exploration early;
+it just never let the policy re-sharpen. **Fix:** `ent_coef` now anneals
+(`ent_coef_final` / `ent_coef_anneal_steps` in PPOConfig, `PPOTrainer.
+ent_coef_at`, emitted as `ent_coef` in the stream). m9b: 0.025 -> 0.01 (m8's
+stable value) over the first 100M steps -- unfreeze early, re-sharpen after. On
+a resume past the window (m9b is at ~160M) it sits at the 0.01 floor
+immediately, so the policy re-sharpens on resume; a fresh run ramps down over
+100M. This is the general lesson for resuming a *converged* policy with extra
+entropy: the boost has to be temporary, or it corrodes what convergence built.
+
 **The eval win-rate bug this surfaced (unrelated to the levers, more
 consequential than either).** m9's live deck-matrix showed Black Deck
 collapsing to ~0.0 win rate mid-run -- alarming, and initially misdiagnosed
@@ -1448,10 +1466,26 @@ training between milestones on a modest local box. Mitigated (not solved) by
 shrinking `eval_num_envs` (fewer parallel slots = a lower chance any one of
 them is a straggler -- the dominant lever, more effective than trimming
 episode counts) and widening `eval_every_steps` / `milestone_every_steps`.
-A structural fix -- capping any one episode's step budget during eval and
-counting a cutoff as a loss -- would bound worst-case wall-clock
-unconditionally but was not implemented; flagged as a follow-up if the
-shrunk-envs mitigation still isn't enough on the target hardware.
+The shrunk-envs mitigation was not enough: live, a single milestone's deck
+matrix was measured at **20,808 s (~5.8 h)** even at reduced counts, while
+`sps_inst` stayed at ~6,600 the whole time -- the run was never actually slow
+to *train*, the cumulative `sps` display just cratered because a ~6 h eval
+added ~6 h of zero-progress wall-clock to the running total-steps/total-time
+average (which then recovers only slowly, reading "<500 sps" long after
+collection is back at full speed -- a display artifact, not a regression).
+
+**The structural fix, now implemented** (`eval.py`, `max_episode_steps`,
+default 1000): an episode that has not finished within the cap is counted as a
+LOSS and no longer waited on. Episode-length p99 is ~356 steps, so >99% of
+real wins finish far under the cap -- the win rate barely moves (measured on
+m9b's checkpoint: Black 0.281, Red 0.633, unchanged from uncapped) while
+worst-case wall-clock is bounded. Measured effect: a 512-env / 512-episode
+eval call dropped from ~25-33 min to **~22 s**, so the 30-call deck matrix
+goes from ~5.8 h to ~11 min. Because cost is no longer straggler-bound, sample
+sizes went back UP (`eval_num_envs` and episodes 128/256 -> 512) for tighter
+per-deck estimates rather than down. The cap assumes `per_slot == 1`, so run
+configs keep `episodes == eval_num_envs`; a `capped` flag prevents the capped
+episode's eventual real end from being double-counted.
 
 **m9b's mitigated eval schedule**, applied mid-run once the ~1.5h/cycle stall
 was observed live (`train/configs/m9b.yaml`): `eval_num_envs` 512 -> 128 (the

@@ -177,17 +177,21 @@ flags a deck whose greedy policy sits on a knife-edge relative to its sampled
 behavior.  The schedule is a pure function (`deck_curriculum.deck_weights`),
 unit-tested without torch.
 
-**`evaluate()`'s episode counting is unbiased but NOT cheap** (`eval.py`, fixed
-2026-09-01 — see `DECISIONS.md` "M9" for the full bug writeup): it takes an
-equal number of episodes from every env slot and waits for the slowest one,
-rather than stopping at the first N episodes to complete (which was biased
-toward fast losses and read hard-deck win rates far too low). The correct
-count costs real wall-clock — a long-tailed episode-length distribution means
-one unlucky slot can stall an entire eval call, and the deck matrix makes 30
-such calls per milestone. **`eval_num_envs` is the primary lever if evals are
-stalling training**: fewer parallel slots means a lower chance any one of them
-is a straggler, which matters far more than trimming episode counts. Widen
-`eval_every_steps` / `milestone_every_steps` as a second lever.
+**`evaluate()`'s episode counting is unbiased and step-capped** (`eval.py`,
+fixed 2026-09-01 — see `DECISIONS.md` "M9" for the full bug writeup): it takes
+an equal number of episodes from every env slot (not the first N to complete,
+which was biased toward fast losses and read hard-deck win rates far too low),
+and caps any single episode at `max_episode_steps` (default 1000), counting a
+timeout as a loss. Without the cap the equal-per-slot count stalls on one
+straggler from the long-tailed episode-length distribution, and the deck
+matrix makes 30 such calls per milestone — that ballooned a milestone to
+~5.8 h. The cap bounds it (a 512-env eval call ~22 s, the matrix ~11 min)
+while barely moving the win rate (>99% of real wins finish under ~356 steps).
+The cap assumes `per_slot == 1`, so keep `episodes == eval_num_envs`. If evals
+still cost too much, lower `eval_num_envs`/episodes together or widen
+`*_every_steps`; **never lower training `env.num_envs` for eval cost** — a long
+eval only tanks the *cumulative* `sps` display, not real collection speed
+(`sps_inst`).
 
 ## Snapshot start-state mixing (M3 backward curriculum)
 

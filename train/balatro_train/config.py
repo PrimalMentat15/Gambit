@@ -59,6 +59,12 @@ class PPOConfig:
     clip_coef: float = 0.2
     vf_coef: float = 0.5
     ent_coef: float = 0.01
+    #: Linear anneal of ent_coef -> ent_coef_final over ent_coef_anneal_steps,
+    #: then hold the floor. None = constant ent_coef. A high CONSTANT ent_coef
+    #: drives entropy UP over a run and corrodes the argmax policy; anneal it so
+    #: the exploration boost is early and the policy re-sharpens afterward.
+    ent_coef_final: float | None = None
+    ent_coef_anneal_steps: int | None = None
     lr: float = 3.0e-4
     anneal_lr: bool = True        # linear decay of lr to 0
     # Denominator of the lr decay ramp. None = total_timesteps (lr hits 0

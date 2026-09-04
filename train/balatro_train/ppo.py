@@ -506,9 +506,23 @@ class PPOTrainer:
         frac = 1.0 - step / max(total, 1)
         return max(frac, 0.0) * cfg.lr
 
+    def ent_coef_at(self, step: int) -> float:
+        """Entropy coefficient for a global step. Linearly anneals ``ent_coef``
+        -> ``ent_coef_final`` over ``ent_coef_anneal_steps``, then holds the
+        floor; constant ``ent_coef`` when the anneal is unset. A high, CONSTANT
+        ent_coef pushes entropy *up* over a run and corrodes the argmax policy
+        (m9b: entropy 2.52->2.78, argmax down ~7pp on every deck); annealing it
+        down lets the policy re-sharpen after the early exploration boost."""
+        cfg = self.cfg.ppo
+        if cfg.ent_coef_final is None or not cfg.ent_coef_anneal_steps:
+            return cfg.ent_coef
+        frac = min(1.0, max(0.0, step / cfg.ent_coef_anneal_steps))
+        return cfg.ent_coef + frac * (cfg.ent_coef_final - cfg.ent_coef)
+
     def update(self) -> dict:
         cfg = self.cfg.ppo
         lr = self.lr_at(self.global_step)
+        ent_coef = self.ent_coef_at(self.global_step)
         if cfg.anneal_lr:
             for group in self.optimizer.param_groups:
                 group["lr"] = lr
@@ -540,7 +554,7 @@ class PPOTrainer:
                 ).mean()
                 v_loss = 0.5 * (new_value - mb["returns"]).pow(2).mean()
                 ent = entropy.mean()
-                loss = pg_loss - cfg.ent_coef * ent + cfg.vf_coef * v_loss
+                loss = pg_loss - ent_coef * ent + cfg.vf_coef * v_loss
 
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -560,6 +574,7 @@ class PPOTrainer:
                     )
         out = {k: float(np.mean([t.item() for t in v])) for k, v in stats_t.items()}
         out["lr"] = lr
+        out["ent_coef"] = ent_coef
         return out
 
     # ------------------------------------------------------------------ train

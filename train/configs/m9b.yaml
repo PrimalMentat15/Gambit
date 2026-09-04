@@ -54,12 +54,17 @@ ppo:
   gae_lambda: 0.95
   clip_coef: 0.2
   vf_coef: 0.5
-  # LEVER 2: 0.025 vs m8's 0.01 -- more entropy to unfreeze shop/reroll
-  # exploration in the resumed (converged) policy.
-  # >>> TURN DOWN (0.015 / 0.01) if: win rate plateaus or dips and won't sharpen,
-  #     entropy (train.log `ent`) stays high / stops falling, or actions look too
-  #     random. This is the exploration lever -- lower = more decisive.
+  # LEVER 2: entropy exploration, now ANNEALED. A constant 0.025 drove entropy
+  # UP over the run (2.52 -> 2.78) and corroded the argmax policy ~7pp on every
+  # deck -- exploration good early, argmax-corrosion late. Anneal 0.025 -> 0.01
+  # (m8's stable value) over the first 100M steps: unfreeze exploration early,
+  # let the policy re-sharpen after. At a resume past 100M (m9b is at ~160M)
+  # this sits at the 0.01 floor immediately, so the policy re-sharpens on resume.
+  # >>> If entropy (train.log `ent`) still rises / won't fall, drop ent_coef_final
+  #     to 0.005. If exploration looks too tame early, raise ent_coef.
   ent_coef: 0.025
+  ent_coef_final: 0.01
+  ent_coef_anneal_steps: 100000000
 
   # Constant lr, as m8: a decaying lr fights a deck mixture (see m8 header).
   # >>> TURN DOWN (3e-5 / 2e-5) if: TRAINING GOES UNSTABLE -- KL (train.log `kl`)
@@ -89,23 +94,22 @@ curriculum:
   start_ante: 8
   ladder: [8]
   promote_winrate: 0.7
-  # evaluate() is unbiased now (equal episodes per env slot), but that means it
-  # WAITS FOR THE SLOWEST SLOT -- one unlucky env stuck on a long/losing run
-  # can single-handedly stall the whole eval. Measured live: promotion eval
-  # ~43 min, milestone ~41 min, PLUS the deck matrix (30 evaluate() calls,
-  # argmax+sampled x15 decks) on top -- over 1.5h blocked every 10M steps.
-  # >>> TURN DOWN eval_num_envs (128) first -- fewer slots = fewer chances of an
-  #     unlucky straggler, so wall-clock drops much faster than episode counts
-  #     do. THEN drop promotion/milestone episodes toward eval_num_envs (1 ep/
-  #     slot). THEN raise *_every_steps if it's still too frequent. Training
-  #     num_envs (above) is a SEPARATE knob -- collection sps was fine (~3.5k);
-  #     do not lower it for this.
+  # evaluate() is unbiased (equal episodes per slot) AND now step-capped
+  # (`max_episode_steps=1000` in eval.py): an episode past the cap counts as a
+  # loss instead of stalling the whole call on one straggler. That capped the
+  # eval cost that had ballooned a milestone to ~5.8 h (measured) down to
+  # ~22 s per call / ~11 min for the 30-call deck matrix -- so sample sizes are
+  # back up for tight per-deck estimates. Keep episodes == eval_num_envs so
+  # per_slot == 1 (the cap assumes it). num_envs (training, above) was never the
+  # bottleneck -- collection held ~6.6k sps throughout; only eval was slow.
+  # >>> If evals still cost too much: lower eval_num_envs (128) and episodes
+  #     together, or widen *_every_steps. Do NOT touch training num_envs for it.
   eval_every_steps: 20000000
-  promotion_eval_episodes: 256
-  eval_num_envs: 128
+  promotion_eval_episodes: 512
+  eval_num_envs: 512
   eval_seed_base: 1000000
   milestone_every_steps: 40000000
-  milestone_episodes: 256
+  milestone_episodes: 512
 
 deck_curriculum:
   enabled: true

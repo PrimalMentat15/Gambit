@@ -62,6 +62,7 @@ tensorboard_logs/
 training.log
 training_monitor.csv
 runs/
+docs/
 
 # Other ML artifacts
 *.pth

@@ -37,6 +37,7 @@ def evaluate(
     device: torch.device | None = None,
     env_kwargs: dict | None = None,
     max_steps: int = 100_000,
+    max_episode_steps: int = 1000,
 ) -> dict:
     """Play >= ``episodes`` full episodes from fixed seeds; return summary stats.
 
@@ -53,8 +54,21 @@ def evaluate(
     # die at ante 1 while wins take all 8 antes, so the quick finishers are
     # mostly losses and the win rate reads far too low, worst for hard decks.
     # Equal episodes per slot removes that completion-order bias.
+    #
+    # STRAGGLER CAP (`max_episode_steps`): waiting for every slot means one slot
+    # on a pathological long run (episode-length p99 ~356 steps but max ~4,700)
+    # can stall the whole call -- and the deck matrix makes 30 calls, which is
+    # how a milestone eval ballooned to ~5.8 h. An episode that has not finished
+    # within the cap is counted as a LOSS and stopped waiting on; >99% of real
+    # wins finish well under the cap, so this barely moves the win rate while
+    # bounding wall-clock. `capped` stops the eventual real end of that same
+    # episode from being double-counted; run configs keep episodes <= num_envs
+    # (per_slot == 1) so a capped slot never has to wait out its long episode
+    # to start a second one.
     per_slot = max(1, math.ceil(episodes / num_envs))
     slot_count = [0] * num_envs
+    ep_steps = [0] * num_envs
+    capped = [False] * num_envs
     returns, lengths, antes, wins = [], [], [], []
     policy.eval()
     for _ in range(max_steps):
@@ -65,13 +79,25 @@ def evaluate(
             )
         obs, masks, _rew, _done, infos = env.step(actions_to_numpy(actions))
         for i, info in enumerate(infos):
-            if "episode" in info and slot_count[i] < per_slot:
-                ep = info["episode"]
-                returns.append(ep["r"])
-                lengths.append(ep["l"])
-                antes.append(ep.get("ante", 0))
-                wins.append(ep.get("won", False))
+            ep_steps[i] += 1
+            if "episode" in info:
+                if not capped[i] and slot_count[i] < per_slot:
+                    ep = info["episode"]
+                    returns.append(ep["r"])
+                    lengths.append(ep["l"])
+                    antes.append(ep.get("ante", 0))
+                    wins.append(ep.get("won", False))
+                    slot_count[i] += 1
+                capped[i] = False
+                ep_steps[i] = 0
+            elif ep_steps[i] >= max_episode_steps and not capped[i] and slot_count[i] < per_slot:
+                # Timed out past the cap: count a loss, stop waiting on it.
+                returns.append(0.0)
+                lengths.append(ep_steps[i])
+                antes.append(0)
+                wins.append(False)
                 slot_count[i] += 1
+                capped[i] = True
         if all(c >= per_slot for c in slot_count):
             break
 
