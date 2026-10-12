@@ -43,6 +43,11 @@ def evaluate(
 
     Envs auto-reset, so each of the ``num_envs`` slots contributes a stream
     of episodes; we stop counting once ``episodes`` have completed.
+
+    An episode past ``max_episode_steps`` is a TIMEOUT: it counts as a loss in
+    ``win_rate`` and contributes to ``return_mean``/``length_mean``, but it has
+    no ante outcome, so it is reported in ``timeouts`` and excluded from
+    ``ante_mean``/``ante_hist`` (which therefore sum to ``episodes - timeouts``).
     """
     device = device or next(policy.parameters()).device
     env = make_vec_env(env_name, num_envs, **(env_kwargs or {}))
@@ -70,6 +75,7 @@ def evaluate(
     ep_steps = [0] * num_envs
     capped = [False] * num_envs
     returns, lengths, antes, wins = [], [], [], []
+    timeouts = 0
     policy.eval()
     for _ in range(max_steps):
         with torch.no_grad():
@@ -91,26 +97,37 @@ def evaluate(
                 capped[i] = False
                 ep_steps[i] = 0
             elif ep_steps[i] >= max_episode_steps and not capped[i] and slot_count[i] < per_slot:
-                # Timed out past the cap: count a loss, stop waiting on it.
+                # Timed out past the cap: counts as a LOSS for win_rate, but it
+                # has no ante outcome -- the episode never ended. It is kept OUT
+                # of `antes` and counted in `timeouts` instead, so ante_mean and
+                # ante_hist describe only episodes that actually finished.
+                # Filing it under ante 0 (the old behaviour) is indistinguishable
+                # from a real ante-0 death (Hieroglyph/Petroglyph call
+                # ease_ante(-1)) and reads as a catastrophic early death when the
+                # truth is the opposite -- the run went too LONG.
                 returns.append(0.0)
                 lengths.append(ep_steps[i])
-                antes.append(0)
                 wins.append(False)
+                timeouts += 1
                 slot_count[i] += 1
                 capped[i] = True
         if all(c >= per_slot for c in slot_count):
             break
 
     returns, antes = np.array(returns), np.array(antes)
+    # `episodes` counts timeouts (win_rate must treat them as losses); ante_mean
+    # and ante_hist are over COMPLETED episodes only, so they sum to
+    # `episodes - timeouts`.
     return {
         "episodes": len(returns),
+        "timeouts": timeouts,
         "mode": "argmax" if deterministic else "stochastic",
-        "return_mean": float(returns.mean()),
-        "return_std": float(returns.std()),
-        "length_mean": float(np.mean(lengths)),
-        "ante_mean": float(antes.mean()),
+        "return_mean": float(returns.mean()) if returns.size else 0.0,
+        "return_std": float(returns.std()) if returns.size else 0.0,
+        "length_mean": float(np.mean(lengths)) if lengths else 0.0,
+        "ante_mean": float(antes.mean()) if antes.size else 0.0,
         "ante_hist": {int(a): int((antes == a).sum()) for a in np.unique(antes)},
-        "win_rate": float(np.mean(wins)),
+        "win_rate": float(np.mean(wins)) if wins else 0.0,
     }
 
 

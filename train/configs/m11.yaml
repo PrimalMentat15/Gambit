@@ -1,0 +1,208 @@
+# M11: capacity experiment -- a BIGGER policy, on branch m11-bigger-policy.
+#
+# WHY (the pivot): m8/m9/m9b/m10 all used the SAME ~1.1M-param policy (d_model
+# 128, 3 layers) and tuned only rewards/curriculum/entropy around it. They all
+# plateaued at ~59% mean deck-matrix win, and the failure is the same on every
+# deck: one loose, high-variance early-game style. Black (one fewer hand) has no
+# margin for it and dies ~47% of the time AT ANTE 1 -- confirmed on the REAL
+# game via bridge crossval (Black 15 seeds / Plasma 4 seeds, zero divergences,
+# so the sim is faithful and this is a real POLICY gap, not a scoring bug).
+# m10 bumped the blind-clear reward (beta 0.1->0.25) and it did NOTHING (Black
+# 36%->31%): the progress reward is capped at "cleared", so a bigger one just
+# pays more for what the policy already does. Reward tuning is exhausted. The
+# untouched dimension is model CAPACITY -- so this run grows the policy,
+# isolating size as the one variable.
+#
+# FRESH START (no resume): the policy dims change, so m9b/m8_seed weights CANNOT
+# be loaded. This trains from scratch:
+#   python -m balatro_train.ppo --config configs/m11.yaml
+# Expect it to take a long time to reach where m9b is -- that is the accepted
+# cost of the capacity route.
+#
+# NOT m9b's shaping/curriculum settings: m9b's beta:0.1-constant and
+# start_ante:8-fixed only make sense for an ALREADY-COMPETENT policy -- that
+# is what m9b actually was, being one continuous resume chain all the way back
+# to the project's original m1->m3->m4->m5 bootstrap (m6's header confirms this
+# explicitly). m11 is the first truly-from-scratch run since that lineage, so
+# it uses THEIR recipe instead: ante starts at 1 and climbs the promotion
+# ladder, and shaping starts strong (beta 1.0) and anneals down to 0.1 only
+# once the policy is already decent. See the curriculum/shaping blocks below.
+#
+# CROSS-EVAL (old 128-wide gen vs this): every checkpoint stores its OWN policy
+# size, and the bridge/crossval rebuild from that, so mixed generations "just
+# work". See the runbook at the bottom of this file.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  # >>> TURN DOWN to 2048 if: CUDA OOM during ROLLOUT (not the update). The
+  #     bigger policy's rollout forward uses more VRAM than the 128-wide one did
+  #     at the same 4096; auto_minibatch only protects the UPDATE, not rollout.
+  name: sim
+  num_envs: 4096
+  seed: 0
+  deck: 0
+  stake: 1
+
+policy:
+  # THE experiment: ~1.1M -> ~2.5M params. d_model 128->192, 3->4 layers,
+  # 4->6 heads (192/6 = 32 per head), MLP hidden 256->384. Everything the
+  # transformer needs comes from here, so no code/rebuild -- and each ckpt
+  # carries these numbers, so the bridge loads it without knowing the size.
+  # >>> TURN DOWN (d_model 160, n_layers 3, hidden 320) if: OOM that dropping
+  #     num_envs to 2048 does not fix, or sps falls so far the run is impractical.
+  d_model: 192
+  n_layers: 4
+  n_heads: 6
+  ffn_mult: 4
+  global_hidden: 384
+  value_hidden: 384
+
+ppo:
+  total_timesteps: 4000000000
+  rollout_len: 128
+  # 4096 x 128 = 524288 per iteration. auto_minibatch shrinks this at startup to
+  # fit the bigger model in VRAM, so leave it -- only lower manually if you also
+  # turn auto_minibatch off.
+  minibatch_size: 4096
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  # Entropy anneal, unchanged from m9b: a constant coefficient drove entropy UP
+  # and corroded the argmax policy; anneal 0.025 -> 0.01 over the first 100M so
+  # exploration is early and the policy re-sharpens after. From scratch this
+  # rides the full schedule (unlike m9b's mid-run resume, which sat at the floor).
+  # >>> If entropy (train.log `ent`) will not fall late, drop ent_coef_final to
+  #     0.005. If early exploration looks too tame, raise ent_coef.
+  ent_coef: 0.025
+  ent_coef_final: 0.01
+  ent_coef_anneal_steps: 100000000
+
+  # Constant lr, as m9b. >>> TURN DOWN (3e-5 / 2e-5) if TRAINING GOES UNSTABLE:
+  #     KL (train.log `kl`) spikes past ~0.02, clipfrac climbs, or win rate
+  #     crashes. A bigger model can be touchier early -- lr is the first cut.
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: false          # TURN ON (true) only once the run is proven stable:
+                          #   ~1 min warmup, faster after; worth more here since
+                          #   the bigger model is more compute-bound.
+  buffer_device: cpu      # KEEP cpu on the 6 GB card.
+  auto_minibatch: true    # KEEP true -- shrinks the update to fit the bigger net.
+  fused_adam: true
+  pin_memory: false       # KEEP false -- pinning host RAM is what OOM'd before.
+
+# FIXED: m11 is a genuine from-scratch bootstrap (new dims -> can't resume
+# m9b's weights), so it needs the ORIGINAL m1->m3->m4->m5 bootstrap recipe --
+# start at ante 1 and climb the ladder as promotion evals clear 70% -- not
+# m9b/m10's start_ante:8/ladder:[8]. That setting only ever makes sense
+# CONTINUING an already-ante-8-competent policy: m6's own header says so
+# explicitly ("this is the same 0.1 the policy has trained under since 900M --
+# expressed honestly rather than inherited"), i.e. m6/m7/m8/m9/m9b/m10 are all
+# one continuously-resumed lineage from that original bootstrap, never a fresh
+# ante-8 start. Cheap eval cadence (2M, 200 episodes) matches m4/m5 -- a
+# bootstrapping policy needs to know quickly when it clears a rung, and 512
+# episodes on a below-ante-8 eval would waste steps for no extra precision.
+curriculum:
+  enabled: true
+  start_ante: 1
+  ladder: [1, 2, 3, 5, 8]
+  promote_winrate: 0.7
+  eval_every_steps: 2000000
+  # episodes MUST be <= eval_num_envs so evaluate()'s per_slot == 1. The
+  # straggler cap assumes it: a capped slot that still owes episodes has to
+  # wait out its pathological run (up to ~4,700 steps) in the env before the
+  # next one can start, which is what made promotion evals cost 1400-2600 s.
+  # m4/m5 used 200/100 (per_slot 2) but predate the cap, so they were safe then.
+  promotion_eval_episodes: 256
+  eval_num_envs: 256
+  eval_seed_base: 1000000
+  milestone_every_steps: 40000000
+  milestone_episodes: 256
+
+# STAGE 1 (this run): Red/White ONLY, matching the ORIGINAL m1->m3->m4->m5
+# bootstrap (before per-deck training existed) -- get one competent base
+# policy before spreading steps across 15 decks. `enabled: false` here does
+# two things at once (ppo.py): training draws only env.deck/env.stake (0/1,
+# above) with no sampling, AND every eval (including milestone) narrows to
+# that single deck/stake too -- so `milestone_eval`'s `win_rate` in train.log
+# IS the ante-8 Red/White number to watch. The per-deck matrix eval is also
+# skipped entirely while this is off (ppo.py:899), which is one less expensive
+# eval slowing the run down.
+# >>> STAGE 2: once milestone_eval win_rate holds around ~0.6, flip this to
+#     `enabled: true` and resume from the latest ckpt to open up all 15 decks:
+#       python -m balatro_train.ppo --config configs/m11.yaml --resume runs/m11/ckpt_<step>.pt
+#     ep_wins_by_cohort only has Red/White history at that point; priority_floor
+#     (0.05) is what guarantees every other deck still gets sampled from step 1
+#     of stage 2 rather than starting at zero weight.
+deck_curriculum:
+  enabled: false
+  tier_steps: [0, 0, 0, 0]
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  enabled: false
+
+shaping:
+  # FIXED: same reasoning as curriculum above. beta:0.1 constant was m9b's
+  # setting for an ALREADY-COMPETENT policy -- the original bootstrap (m4/m5,
+  # the only other from-scratch runs this project has done) started at a
+  # strong 1.0 and annealed down to 0.1 only once the policy was already
+  # decent (their window: steps 500M-900M of a 3.5-4B budget). A random
+  # policy at beta 0.1 gets a much fainter per-hand/blind-clear signal right
+  # when it needs it most -- reusing the proven 500M/900M window here since
+  # m11's total budget (4B) is the same order of magnitude as m4/m5's.
+  # cash_beta held OFF (0.0) until ante-8 is reached organically -- the m9b
+  # dead-cash lever assumes ante>=5 play exists to shape; it is a no-op below
+  # that ante anyway (CASH_ANTE_MIN=5 in action.rs) but is zeroed here for
+  # clarity while the ladder is climbing.
+  # >>> If early progress (ante-1 promotion) looks slow to even START moving,
+  #     this is the first knob to raise further (e.g. 1.0 -> 1.5) before
+  #     touching lr or entropy.
+  beta: 1.0
+  anneal:
+    start_step: 500000000
+    end_step: 900000000
+    final_beta: 0.1
+  cash_beta: 0.0
+
+log:
+  run_name: m11
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false
+
+# --------------------------------------------------------------------------
+# CROSS-EVAL RUNBOOK (old 128-wide m9b/m10 vs this 192-wide m11)
+# --------------------------------------------------------------------------
+# Offline, per-deck win rate + where each deck dies (no game needed):
+#   deck_failure_probe.py --ckpt runs/m9b/ckpt_1038090240.pt --decks 4,11,13
+#   deck_failure_probe.py --ckpt runs/m11/ckpt_<step>.pt      --decks 4,11,13
+#
+# Live A/B on the SAME seeds (game running w/ balatrobot). crossval uses fixed
+# deterministic seeds, so the two runs are directly comparable outcome-by-outcome:
+#   python -m balatro_bridge.crossval --policy ckpt --ckpt runs/m9b/ckpt_1038090240.pt \
+#       --deck BLACK --seeds 15 --max-antes 8 --continue-on-divergence
+#   python -m balatro_bridge.crossval --policy ckpt --ckpt runs/m11/ckpt_<step>.pt \
+#       --deck BLACK --seeds 15 --max-antes 8 --continue-on-divergence
+#
+# Watch either generation actually play the real game (BOT RUN in-menu picker):
+#   balatro-bridge-autoplay --ckpt runs/m9b/ckpt_1038090240.pt   # old gen
+#   balatro-bridge-autoplay --ckpt runs/m11/ckpt_<step>.pt       # new gen
+# --------------------------------------------------------------------------

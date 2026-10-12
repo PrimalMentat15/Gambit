@@ -931,6 +931,11 @@ def main() -> int:
                     help="checkpoint .pt for --policy ckpt (demo extra)")
     ap.add_argument("--device", type=str, default="cpu",
                     help="torch device for --policy ckpt")
+    ap.add_argument("--deck", type=str, default="RED",
+                    help="deck name (uppercased leading word, e.g. RED, "
+                         "BLACK, PAINTED, PLASMA)")
+    ap.add_argument("--stake", type=str, default="WHITE",
+                    help="stake name (e.g. WHITE, GOLD)")
     ap.add_argument("--max-antes", type=int, default=3)
     ap.add_argument("--max-steps", type=int, default=400)
     ap.add_argument("--continue-on-divergence", action="store_true")
@@ -968,19 +973,25 @@ def main() -> int:
         game = GameDriver(args.host, args.port)
         game.client.health()
 
+    deck = args.deck.upper()
+    stake = args.stake.upper()
+
     ok = True
     for seed in seeds:
-        key = f"{seed}:{args.policy}:{'dry' if args.dry_run else 'live'}"
+        key = (f"{seed}:{args.policy}:{deck}:{stake}:"
+               f"{'dry' if args.dry_run else 'live'}")
         prev = progress.get(key)
         if prev and not args.redo and prev.get("status") not in ("game_error",):
             print(f"[{seed}] skipped (already {prev['status']}, "
                   f"{prev.get('steps', 0)} steps)")
             continue
-        print(f"[{seed}] policy={args.policy} max_antes={args.max_antes}", flush=True)
+        print(f"[{seed}] policy={args.policy} deck={deck} stake={stake} "
+              f"max_antes={args.max_antes}", flush=True)
         t0 = time.monotonic()
         res = run_one(
             seed, game, args.policy, args.max_antes, args.max_steps,
             reports_dir, args.continue_on_divergence, policy_fn,
+            deck=deck, stake=stake,
         )
         res["wall_s"] = round(time.monotonic() - t0, 1)
         print(f"[{seed}] {res['status']} after {res.get('steps', 0)} steps "

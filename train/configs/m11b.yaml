@@ -1,0 +1,172 @@
+# M11b: unlock the decks LOCALLY, from m11's Red/White base.
+#
+# m11 ran Red/White only (deck_curriculum.enabled: false) to build a base
+# policy, and reached ante 8 at ~0.61-0.67 on Red/White by ~700M steps. m11b
+# flips that one lock and lets all 15 decks go live on the local 6 GB card --
+# the same change m12 makes, but WITHOUT the cloud perf profile, so the deck
+# behaviour can be watched here before committing the rented 5090 to it.
+#
+#   python -m balatro_train.ppo --config configs/m11b.yaml --resume runs/m11/ckpt_<final>.pt
+#
+# m11b vs m12: IDENTICAL except for the perf block and eval sizing. If m11b
+# looks healthy, m12 is the same run with buffer_device cuda / pin_memory /
+# compile / minibatch 32768 and bigger evals. Keeping them split means a bad
+# deck mixture is discovered on free local hardware, not on paid cloud time.
+#
+# NOT rebased: global_step carries over from m11, so the shaping anneal below
+# lands where its absolute step numbers say (beta ~0.55 at the 702M handoff,
+# reaching 0.1 at 900M).
+#
+# Expect Red to DIP once the other 14 decks go live -- that is the mixture, not
+# a regression. Known-hard decks from the m9b/m10 grid (smaller policy): Black
+# ~35%, Painted ~36%, Plasma ~41%; all three confirmed as genuine difficulty
+# against the real game by bridge crossval, with zero sim divergences.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  # >>> TURN DOWN (2048 / 1024) if: CUDA OOM at startup, host RAM/pagefile
+  #     thrash (the buffer is on CPU and scales with num_envs), or the laptop is
+  #     thermal-throttling. This is the #1 knob if the box strains.
+  num_envs: 4096
+  seed: 0
+  # Base config the curriculum samples around; deck is overridden per-episode by
+  # deck_curriculum, stake stays White for the whole P7 grid.
+  deck: 0
+  stake: 1
+
+policy:
+  # IDENTICAL to m11 (and m12). Changing any of these makes runs/m11
+  # checkpoints unloadable -- the resume needs the exact shapes it trained with.
+  d_model: 192
+  n_layers: 4
+  n_heads: 6
+  ffn_mult: 4
+  global_hidden: 384
+  value_hidden: 384
+
+ppo:
+  total_timesteps: 4000000000
+  rollout_len: 128
+  # 4096 x 128 = 524288 per iteration -> 128 minibatches. Must divide 524288.
+  # >>> TURN DOWN (2048 / 1024) if: OOM DURING THE UPDATE (not rollout).
+  #     auto_minibatch already halves this to fit, so only lower it by hand if
+  #     you also turn auto_minibatch off.
+  minibatch_size: 4096
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+
+  # Already at the 0.01 floor (the 100M anneal window is far behind the ~700M
+  # resume point), i.e. the flat 0.01 the deck mixture ran under in m8_cloud.
+  # Kept as a schedule rather than a bare constant because a CONSTANT high
+  # ent_coef is what corroded m9b's argmax (entropy 2.52 -> 2.78, ~7pp off every
+  # deck).
+  # >>> To re-open exploration for the newly-live decks, raise ent_coef AND push
+  #     ent_coef_anneal_steps past the resume step (e.g. 0.02 / 1.2e9) so it
+  #     actually anneals back down instead of sitting high.
+  ent_coef: 0.025
+  ent_coef_final: 0.01
+  ent_coef_anneal_steps: 100000000
+
+  # Constant lr, as m8_cloud/m9b/m11. A decaying lr fights a deck mixture: it is
+  # highest at step 0 (risking the Red mastery being resumed) and near zero later
+  # (when the weakest decks still need to learn).
+  # >>> TURN DOWN (3e-5 / 2e-5) if TRAINING GOES UNSTABLE: KL past ~0.02,
+  #     clipfrac climbing, or Red's win rate falling FAR below the dip the
+  #     mixture alone explains.
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  # LOCAL profile (the m11 settings) -- this is the only block that differs from
+  # m12 besides eval sizing. Do not copy the cloud values onto the 6 GB card.
+  bf16_update: true
+  compile: false          # TURN ON (true) only for a long stable run: ~1 min
+                          #   warmup, faster after. Off avoids compile flakiness.
+  buffer_device: cpu      # KEEP cpu on the 6 GB card (buffer in RAM).
+  auto_minibatch: true    # KEEP true -- the OOM safety net that shrinks the
+                          #   update minibatch at startup to fit VRAM.
+  fused_adam: true
+  pin_memory: false       # KEEP false -- pinning host RAM is what OOM'd the
+                          #   pagefile before.
+
+curriculum:
+  enabled: true
+  # m11 hands off at win_ante 8, and resume RESTORES win_ante from the
+  # checkpoint, so start_ante is inert here. The ladder keeps every rung anyway:
+  # ppo.py:843 does ladder.index(win_ante) on any promotion check and raises
+  # ValueError if the restored rung is absent. Once win_ante == ladder[-1] the
+  # promotion branch is inert regardless.
+  start_ante: 8
+  ladder: [1, 2, 3, 5, 8]
+  promote_winrate: 0.7
+  # episodes MUST be <= eval_num_envs so evaluate()'s per_slot == 1 -- the
+  # straggler cap assumes it, and a capped slot that still owes episodes has to
+  # wait out its pathological run in the env.
+  eval_every_steps: 2000000
+  promotion_eval_episodes: 256
+  eval_num_envs: 256
+  eval_seed_base: 1000000
+  # The 15-deck matrix rides this cadence at 30 calls (argmax + sampled per
+  # deck), so it is much more expensive than the single-deck milestone m11 ran.
+  # >>> If the deck matrix costs too much wall-clock, widen milestone_every_steps
+  #     first; do NOT raise milestone_episodes above eval_num_envs.
+  milestone_every_steps: 40000000
+  milestone_episodes: 256
+
+deck_curriculum:
+  # THE change vs m11, which had this false to lock training to Red/White.
+  # All 15 decks live from step 0 with prioritized sampling toward whichever is
+  # weakest. The resumed policy already masters Red and shares ~90% of its
+  # mechanics across decks, so staged tiers buy little; the reweighting is the
+  # part that earns its keep.
+  enabled: true
+  tier_steps: [0, 0, 0, 0]
+  # Weight ~ (1 - winrate + floor)^alpha among live decks.
+  # >>> RAISE priority_alpha (1.5-2.0) to concentrate harder on a lagging deck;
+  #     uniform_mix is the floor that stops any deck starving.
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  enabled: false
+
+shaping:
+  # Continues m11's bootstrap anneal on the SAME absolute step axis (no rebase):
+  # beta ~0.55 at the 702M handoff, reaching 0.1 at 900M and holding -- which is
+  # the constant 0.1 that m4->m7 and m8_cloud all trained the deck mixture under.
+  # >>> Do NOT raise beta to chase a weak deck: m10 tried exactly that
+  #     (0.1 -> 0.25) and it did NOTHING (Black 36% -> 31%). The per-hand
+  #     progress term is CAPPED at "blind cleared", so a bigger beta just pays
+  #     more for what the policy already does.
+  beta: 1.0
+  anneal:
+    start_step: 500000000
+    end_step: 900000000
+    final_beta: 0.1
+  # m9's dead-cash lever, held OFF so m11b changes one thing (decks) not two.
+  # >>> Candidate knob (0.001) if the `timeouts` count climbs -- m11 is already
+  #     at ~7-9% (17-22/256) on Red/White, and shop reroll churn is the leading
+  #     suspect for over-long episodes.
+  cash_beta: 0.0
+
+log:
+  run_name: m11b
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 10
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

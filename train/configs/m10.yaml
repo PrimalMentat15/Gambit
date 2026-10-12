@@ -1,0 +1,155 @@
+# M10: early-game survival experiment, resumed from converged m9b.
+#
+# WHAT WE LEARNED (m9b, 1.04B steps, confirmed on the real game via crossval):
+#   - The sim is FAITHFUL on Black through ante 2 (15 seeds, zero divergences),
+#     so the low Black/Painted/Plasma win rates are real policy gaps, not bugs.
+#   - Black loses ~47% of the time AT ANTE 1. The policy plays every deck the
+#     same loose way (thrashy discards, ~60-chip early hands, betting a big
+#     hand lands eventually). On 4-hand decks there's a spare hand for that big
+#     hand to arrive; Black has 3 hands and no jokers yet, so half the time the
+#     run dies before it clears the trivial 300-chip small blind. Once past
+#     ante 1 the same policy crushes (2700+ chips by ante 3).
+#   - Painted/Plasma are the opposite: they clear the early game fine and die
+#     at antes 5-8 (a scaling ceiling, a broader problem, not addressed here).
+#
+# THE LEVERS THIS CONFIG PULLS (all reversible; watch the deck matrix + the
+# Black ante-1 death rate, i.e. milestone ante_hist):
+#
+#   1. beta 0.1 -> 0.25. The dense per-hand/blind-clear shaping is what tells
+#      the policy "getting closer to clearing a blind is good". At 0.1 a whole
+#      run's shaping (~4) is dwarfed by the +15 win bonus, so the signal to
+#      reliably clear EARLY blinds is faint. 0.25 gives it teeth. This is a
+#      pure config change -- no rebuild.
+#      NOTE: this alone may only partly move Black. The trace shows the policy
+#      ALREADY wants to clear; it dies from variance in hand selection, not
+#      from not caring. If Black's ante-1 rate barely moves after ~150M steps,
+#      the targeted fix is a CODE change in sim/py/src/action.rs: either add a
+#      small penalty for dying (larger the earlier you die) or drop the
+#      `0.15*ante` term so an ante-1 clear is worth as much as a late one --
+#      both directly reward surviving the first blind. Ask and I'll draft it
+#      (it needs a maturin rebuild but NOT an encoding-contract change, since
+#      reward never enters the observation).
+#      >>> TURN DOWN (0.15 / 0.1) if: easy decks (Red/Blue) regress, or early
+#          training goes unstable after the resume (the critic was trained on
+#          beta=0.1 returns, so expect a transient while it re-scales).
+#
+#   2. cash_beta 0.001 -> 0.0 (OFF). The dead-cash "spend your surplus" lever
+#      was aimed at LATE-game hoarding. But the crossval shows the hard decks
+#      lose by falling SHORT of the requirement, not by sitting on idle cash --
+#      they're under-resourced, not hoarding. So this lever targets the wrong
+#      problem for exactly the decks that need help, and may even hurt by
+#      pushing spending when they should bank toward a strong shop turn. Turned
+#      off to isolate the beta change cleanly.
+#      >>> TURN BACK ON (0.001) only if a later experiment is specifically about
+#          late-game surplus on the EASY decks.
+#
+# Resume (from m9b's converged best; far cheaper than restarting 1B steps):
+#   python -m balatro_train.ppo --config configs/m10.yaml \
+#       --resume runs/m9b/ckpt_1038090240.pt
+#
+# Fidelity caveat unchanged: absolute win rates off Red/White stay provisional
+# until P5 crossval is reopened for the full grid.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  # >>> TURN DOWN (2048 / 1024 / 512) if: CUDA OOM at startup, host RAM /
+  #     pagefile thrash (buffer is on CPU, scales with num_envs), or sps is low.
+  name: sim
+  num_envs: 4096
+  seed: 0
+  deck: 0
+  stake: 1
+
+policy:
+  d_model: 128
+  n_layers: 3
+  n_heads: 4
+  ffn_mult: 4
+  global_hidden: 256
+  value_hidden: 256
+
+ppo:
+  total_timesteps: 4000000000
+  rollout_len: 128
+  # 4096 x 128 = 524288 per iteration; auto_minibatch halves this to fit VRAM.
+  # >>> TURN DOWN (2048 / 1024) only if OOM during the UPDATE and you also turn
+  #     auto_minibatch off.
+  minibatch_size: 4096
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  # Entropy: annealed 0.025 -> 0.01 over the first 100M steps. Resuming past
+  # 100M sits at the 0.01 floor immediately (a constant high value corrodes the
+  # argmax; see m9b). Leave as-is.
+  # >>> If entropy (train.log `ent`) rises / won't fall, drop ent_coef_final to
+  #     0.005. If exploration looks too tame, raise ent_coef.
+  ent_coef: 0.025
+  ent_coef_final: 0.01
+  ent_coef_anneal_steps: 100000000
+
+  # Constant lr, as m8/m9b (a decaying lr fights a deck mixture).
+  # >>> TURN DOWN (3e-5 / 2e-5) if TRAINING GOES UNSTABLE: KL (`kl`) spikes well
+  #     above ~0.02, clipfrac climbs, or win rate crashes suddenly.
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  compile: false
+  buffer_device: cpu
+  auto_minibatch: true
+  fused_adam: true
+  pin_memory: false
+
+curriculum:
+  enabled: true
+  start_ante: 8
+  ladder: [8]
+  promote_winrate: 0.7
+  # evaluate() is unbiased (equal episodes per slot) and step-capped
+  # (max_episode_steps=1000). Keep episodes == eval_num_envs so per_slot == 1.
+  # >>> If evals cost too much: lower eval_num_envs (128) and episodes together,
+  #     or widen *_every_steps. Do NOT touch training num_envs for it.
+  eval_every_steps: 20000000
+  promotion_eval_episodes: 512
+  eval_num_envs: 512
+  eval_seed_base: 1000000
+  milestone_every_steps: 40000000
+  milestone_episodes: 512
+
+deck_curriculum:
+  enabled: true
+  tier_steps: [0, 0, 0, 0]
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  enabled: false
+
+shaping:
+  beta: 0.25
+  anneal:
+    start_step: 0
+    end_step: 0
+    final_beta: 0.25
+  cash_beta: 0.0
+
+log:
+  run_name: m10
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

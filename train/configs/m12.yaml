@@ -1,0 +1,186 @@
+# M12: open all 15 decks on the rented RTX-5090 (Vast.ai), from m11's
+# Red/White base. This is m8_cloud's job done again with m11's BIGGER policy.
+#
+# The parallel is exact. m8_cloud took m7's best Red/White ante-8 policy
+# (69.75%) and opened the deck grid on the 5090. m12 takes m11's Red/White
+# ante-8 policy (~70% at handoff, 2.86M params vs m8's 1.13M) and does the same.
+# Everything here is m11's setup plus decks plus the cloud perf profile -- the
+# policy block is UNCHANGED from m11 and must stay that way or the resume fails
+# to load.
+#
+#   python -m balatro_train.ppo --config configs/m12.yaml --resume runs/m11/ckpt_<final>.pt
+#
+# NOT rebased to step 0 (unlike m8_seed): global_step carries over from m11, so
+# the shaping anneal below lands where its absolute step numbers say it does.
+#
+# SYNC BEFORE LAUNCHING: the cloud box needs the current eval.py/ppo.py. Evals
+# now report `timeouts` separately instead of filing timed-out episodes under
+# ante 0, where they were indistinguishable from real ante-0 deaths
+# (Hieroglyph/Petroglyph call ease_ante(-1)) and read as catastrophic early
+# deaths when the run had actually gone too LONG. m11 at ante 8 shows ~3-6%
+# timeouts (8-16 / 256) -- watch that number here, it is the shop-churn signal.
+#
+# Scope: decks, White stake. Stakes are a following ladder run; naneinf is P8.
+
+seed: 1
+device: cuda
+bf16_rollout: true
+
+env:
+  name: sim
+  # 4096 on the dedicated 32 GB 5090. m8_cloud measured collection as CPU-bound
+  # on this 16-thread box, so going past 4096 lengthens collection without a
+  # matching speedup. The bigger m11 policy shifts the balance toward the GPU,
+  # so 4096 remains the sweet spot rather than an obvious under-use.
+  # >>> TURN DOWN (2048) if: CUDA OOM at startup, or sps is far below the ~400-600
+  #     the bigger policy managed locally.
+  num_envs: 4096
+  seed: 0
+  # Base config the curriculum samples around; deck is overridden per-episode by
+  # deck_curriculum, stake stays White for the whole P7 grid.
+  deck: 0
+  stake: 1
+
+policy:
+  # IDENTICAL to m11. Changing any of these makes runs/m11 checkpoints
+  # unloadable -- the resume needs the exact shapes it was trained with.
+  d_model: 192
+  n_layers: 4
+  n_heads: 6
+  ffn_mult: 4
+  global_hidden: 384
+  value_hidden: 384
+
+ppo:
+  total_timesteps: 4000000000
+  rollout_len: 128
+  # 32768 (the m5/m8_cloud cloud setup): on 32 GB the update fits full-size,
+  # giving 16 minibatches per epoch (524288 = 4096 x 128) instead of 128 --
+  # fewer, larger optimizer steps and better GPU utilization than the 4096 the
+  # 6 GB local card forced. Must divide 524288.
+  # >>> auto_minibatch below only ever HALVES this to fit; it never raises it.
+  minibatch_size: 32768
+  update_epochs: 2
+
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+
+  # Already at the 0.01 floor: the anneal window (100M) is far behind m11's
+  # ~700M resume point, so this is effectively the flat 0.01 that m8_cloud ran
+  # the deck mixture under. Kept as a schedule rather than a bare constant
+  # because a CONSTANT high ent_coef is what corroded m9b's argmax (entropy rose
+  # 2.52 -> 2.78, ~7pp off every deck).
+  # >>> To re-open exploration for the newly-live decks, raise ent_coef AND push
+  #     ent_coef_anneal_steps past the resume step (e.g. 0.02 / 1.2e9) so it
+  #     actually anneals back down instead of sitting high.
+  ent_coef: 0.025
+  ent_coef_final: 0.01
+  ent_coef_anneal_steps: 100000000
+
+  # Constant lr, as m8_cloud/m9b/m11. A decaying lr fights a deck mixture: it is
+  # highest at step 0 (risking the Red mastery being resumed) and near zero later
+  # (when the weakest decks still need to learn).
+  # >>> TURN DOWN (3e-5 / 2e-5) if TRAINING GOES UNSTABLE: KL past ~0.02,
+  #     clipfrac climbing, or Red's win rate falling after decks go live.
+  lr: 5.0e-5
+  anneal_lr: false
+
+  max_grad_norm: 0.5
+  norm_adv: true
+  norm_ret: true
+
+perf:
+  bf16_update: true
+  # Cloud profile -- all three of these are the opposite of the local 6 GB card.
+  # Dedicated Linux box, 32 GB VRAM / 30 GB RAM, nothing else competing: keep the
+  # rollout buffer VRAM-resident so queued pre-step buffers overlap the Rust
+  # env.step, and pin host staging for fast non-blocking H2D. pin_memory is what
+  # OOM'd the pagefile LOCALLY; it cannot recur here with the buffer on the GPU.
+  compile: true
+  buffer_device: cuda
+  pin_memory: true
+  auto_minibatch: true
+  fused_adam: true
+
+curriculum:
+  enabled: true
+  # m11 hands off at win_ante 8 (it promoted past 5 around ~600M), and resume
+  # RESTORES win_ante from the checkpoint, so start_ante is inert here.
+  # The ladder keeps every rung anyway: ppo.py:843 does ladder.index(win_ante)
+  # on any promotion check, which raises ValueError if the restored rung is
+  # absent. m8_cloud's ladder [8] was safe only because its seed was already at
+  # 8; carrying all rungs makes this robust if m11 is handed over at 5 instead.
+  # Once win_ante == ladder[-1] the promotion branch is inert regardless.
+  start_ante: 8
+  ladder: [1, 2, 3, 5, 8]
+  promote_winrate: 0.7
+  # episodes MUST be <= eval_num_envs so evaluate()'s per_slot == 1 -- the
+  # straggler cap assumes it. m8_cloud's 2000/512 (per_slot 4) violated this: a
+  # capped slot that still owes episodes has to wait out its pathological run in
+  # the env, which is what made evals cost thousands of seconds.
+  eval_every_steps: 25000000
+  promotion_eval_episodes: 1024
+  eval_num_envs: 1024
+  eval_seed_base: 1000000
+  # The 15-deck matrix rides this cadence at 30 calls (argmax + sampled per
+  # deck), so milestone_episodes stays at m9b's proven 512 rather than matching
+  # promotion's 1024.
+  # >>> If the deck matrix costs too much wall-clock, widen milestone_every_steps
+  #     first; do NOT raise milestone_episodes above eval_num_envs.
+  milestone_every_steps: 50000000
+  milestone_episodes: 512
+
+deck_curriculum:
+  # THE change vs m11, which ran Red/White only (enabled: false) to build the
+  # base policy. All 15 decks live from step 0 with prioritized sampling toward
+  # whichever is weakest -- the m8_cloud/m9b setup. The resumed policy already
+  # masters Red and shares ~90% of its mechanics across decks, so staged tiers
+  # buy little; the reweighting is the part that earns its keep.
+  # Expect Red's win rate to DIP when decks go live -- that is the mixture, not a
+  # regression. Known hard decks from the m9b/m10 grid: Black (~35%), Painted
+  # (~36%), Plasma (~41%); all three are genuine difficulty, confirmed against
+  # the real game by bridge crossval with zero sim divergences.
+  enabled: true
+  tier_steps: [0, 0, 0, 0]
+  # Weight ~ (1 - winrate + floor)^alpha among live decks.
+  # >>> RAISE priority_alpha (1.5-2.0) to concentrate harder on a lagging deck;
+  #     uniform_mix is the floor that stops any deck starving.
+  priority_alpha: 1.0
+  priority_floor: 0.05
+  uniform_mix: 0.2
+
+snapshots:
+  enabled: false
+
+shaping:
+  # Continues m11's bootstrap anneal on the SAME absolute step axis (no rebase).
+  # m11 is at beta ~0.71 at 629M; by 900M this reaches 0.1 and holds -- which is
+  # exactly the constant 0.1 that m4->m7 and m8_cloud all trained the deck
+  # mixture under. So the dense signal stays somewhat elevated while the new
+  # decks are first being learned, then settles to the proven regime.
+  # >>> Do NOT raise beta to chase a weak deck: m10 tried exactly that
+  #     (0.1 -> 0.25) and it did NOTHING (Black 36% -> 31%). The per-hand
+  #     progress term is CAPPED at "blind cleared", so a bigger beta just pays
+  #     more for what the policy already does.
+  beta: 1.0
+  anneal:
+    start_step: 500000000
+    end_step: 900000000
+    final_beta: 0.1
+  # m9's dead-cash lever, held OFF. Painted/Plasma lose by falling SHORT late
+  # (under-resourced), not by hoarding, so spend-down pressure targets the wrong
+  # failure. Kept at 0 so m12 changes one thing (decks) rather than two.
+  # >>> Candidate knob (0.001) if the `timeouts` count climbs -- shop reroll
+  #     churn is the leading suspect for over-long episodes.
+  cash_beta: 0.0
+
+log:
+  run_name: m12
+  log_dir: runs
+  ckpt_dir: runs
+  save_every_iters: 20
+  log_every_iters: 1
+  tensorboard: true
+  wandb: false

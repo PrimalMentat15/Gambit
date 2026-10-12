@@ -815,6 +815,7 @@ class PPOTrainer:
             print(
                 f"[curriculum] step {self.global_step}: ante-{self.win_ante} "
                 f"argmax win-rate {win_rate:.3f} over {stats['episodes']} eps "
+                f"timeouts {stats.get('timeouts', 0)} "
                 f"({time.time() - t0:.1f}s)",
                 flush=True,
             )
@@ -831,6 +832,9 @@ class PPOTrainer:
                 win_ante=self.win_ante,
                 win_rate=win_rate,
                 episodes=stats["episodes"],
+                timeouts=stats.get("timeouts", 0),
+                ante_mean=stats["ante_mean"],
+                ante_hist=stats["ante_hist"],
                 threshold=cur.promote_winrate,
                 elapsed=time.time() - t0,
             )
@@ -874,15 +878,23 @@ class PPOTrainer:
                 f"[milestone] step {self.global_step}: full-game argmax "
                 f"win-rate {stats['win_rate']:.3f}  ante_mean "
                 f"{stats['ante_mean']:.2f}  return_mean {stats['return_mean']:.2f} "
+                f"timeouts {stats.get('timeouts', 0)}/{stats['episodes']} "
                 f"({time.time() - t0:.1f}s)",
                 flush=True,
             )
             if self.writer:
                 for key in ("win_rate", "ante_mean", "return_mean", "length_mean"):
                     self.writer.add_scalar(f"eval/{key}", stats[key], self.global_step)
+                episodes = max(stats["episodes"], 1)
+                timeouts = stats.get("timeouts", 0)
+                self.writer.add_scalar(
+                    "eval/timeout_rate", timeouts / episodes, self.global_step
+                )
+                # ante_hist covers completed episodes only, so normalize by that.
+                completed = max(stats["episodes"] - timeouts, 1)
                 for ante, count in stats["ante_hist"].items():
                     self.writer.add_scalar(
-                        f"eval/ante_hist_{ante}", count / max(stats["episodes"], 1),
+                        f"eval/ante_hist_{ante}", count / completed,
                         self.global_step,
                     )
             emit(
