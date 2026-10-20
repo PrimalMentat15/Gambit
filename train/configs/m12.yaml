@@ -1,5 +1,6 @@
-# M12: open all 15 decks on the rented RTX-5090 (Vast.ai), from m11's
-# Red/White base. This is m8_cloud's job done again with m11's BIGGER policy.
+# M12: all 15 decks on a cloud GPU (Kaggle RTX PRO 6000; originally sized for
+# the Vast.ai RTX-5090), from m11's base. m8_cloud's job done again with m11's
+# BIGGER policy.
 #
 # The parallel is exact. m8_cloud took m7's best Red/White ante-8 policy
 # (69.75%) and opened the deck grid on the 5090. m12 takes m11's Red/White
@@ -8,10 +9,13 @@
 # policy block is UNCHANGED from m11 and must stay that way or the resume fails
 # to load.
 #
-#   python -m balatro_train.ppo --config configs/m12.yaml --resume runs/m11/ckpt_<final>.pt
+# Resumes m11b, the same decks-on run trained locally to 734M:
+#   python -m balatro_train.ppo --config configs/m12.yaml --resume runs/m11b/ckpt_734003200.pt
+# On Kaggle the gambit-m12 / agi3 notebook does this, with cadence overrides
+# for the RTX PRO 6000's ~40k steps/s (see the notebook's OVERRIDES).
 #
-# NOT rebased to step 0 (unlike m8_seed): global_step carries over from m11, so
-# the shaping anneal below lands where its absolute step numbers say it does.
+# NOT rebased to step 0 (unlike m8_seed): global_step carries over, so the
+# shaping anneal below lands where its absolute step numbers say it does.
 #
 # SYNC BEFORE LAUNCHING: the cloud box needs the current eval.py/ppo.py. Evals
 # now report `timeouts` separately instead of filing timed-out episodes under
@@ -82,10 +86,31 @@ ppo:
   # Constant lr, as m8_cloud/m9b/m11. A decaying lr fights a deck mixture: it is
   # highest at step 0 (risking the Red mastery being resumed) and near zero later
   # (when the weakest decks still need to learn).
-  # >>> TURN DOWN (3e-5 / 2e-5) if TRAINING GOES UNSTABLE: KL past ~0.02,
-  #     clipfrac climbing, or Red's win rate falling after decks go live.
-  lr: 5.0e-5
+  # 3e-5 for the 32768 minibatch: 16 large Adam steps per epoch move the policy
+  # further per iteration than m11's 128 small ones. At 5e-5 this regime ran at
+  # KL ~0.012 (m11 local: ~0.007) and diverged after 45 iterations (KL 0.015 ->
+  # 0.056 -> 3.49, weights destroyed). Target: KL back near ~0.007.
+  # >>> TURN DOWN (2e-5) if KL (train.log `kl`) still runs above ~0.01 or
+  #     `kl_stop` shows up in most iterations.
+  lr: 3.0e-5
   anneal_lr: false
+
+  # Update guards (ppo.update / divergence_reason). Healthy iterations here peak
+  # around KL 0.018, so neither fires in normal training.
+  # target_kl: skip the rest of an iteration's minibatch steps once one
+  #   minibatch measures KL past this; `kl_stop@N` in the log marks it.
+  # kl_ceiling: stop training WITHOUT saving when an iteration's MEAN KL exceeds
+  #   this (also on non-finite loss or negative entropy), so the last periodic
+  #   checkpoint remains the restart point. Mean, not max: single-minibatch KL
+  #   spikes are estimator outliers (5 in ~2800 m12 iterations, up to 0.116,
+  #   each isolated, kl0 ~0) -- a max-based ceiling killed healthy session 2.
+  # kl_stop_streak: also stop when target_kl fires this many iterations in a
+  #   row. Healthy runs never stop back-to-back; the compiled collapse stopped
+  #   every iteration from 1442 and this trips at 1446, before its NaN at 1454.
+  # >>> If `kl_stop` fires every iteration, lower lr rather than raising these.
+  target_kl: 0.03
+  kl_ceiling: 0.1
+  kl_stop_streak: 5
 
   max_grad_norm: 0.5
   norm_adv: true
@@ -93,12 +118,20 @@ ppo:
 
 perf:
   bf16_update: true
-  # Cloud profile -- all three of these are the opposite of the local 6 GB card.
-  # Dedicated Linux box, 32 GB VRAM / 30 GB RAM, nothing else competing: keep the
-  # rollout buffer VRAM-resident so queued pre-step buffers overlap the Rust
-  # env.step, and pin host staging for fast non-blocking H2D. pin_memory is what
-  # OOM'd the pagefile LOCALLY; it cannot recur here with the buffer on the GPU.
-  compile: true
+  # Cloud profile -- buffer_device / pin_memory are the opposite of the local
+  # 6 GB card. Dedicated box with ample VRAM/RAM: keep the rollout buffer
+  # VRAM-resident so queued pre-step buffers overlap the Rust env.step, and pin
+  # host staging for fast non-blocking H2D. pin_memory is what OOM'd the pagefile
+  # LOCALLY; it cannot recur here with the buffer on the GPU.
+  # compile OFF for this policy: the compiled no-grad rollout graph and the
+  # compiled grad update graph disagree in bf16 -- measured on the m11b weights
+  # with no optimizer step, rollout-vs-update KL is ~1e-4 compiled vs ~2e-6
+  # eager, with single samples at |log-ratio| ~0.37 (outside PPO's clip range
+  # before learning). That bias compounded until both compiled m12 sessions
+  # diverged; m11/m11b ran eager for 700M steps without it.
+  # >>> Watch `kl0` in train.log (pre-step KL): eager it sits near 1e-6. Do not
+  #     turn compile back on without re-measuring kl0.
+  compile: false
   buffer_device: cuda
   pin_memory: true
   auto_minibatch: true
