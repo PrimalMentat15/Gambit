@@ -447,11 +447,13 @@ impl Run {
             // only the compat flag gates each.
             if self.modifiers.enable_eternals_in_shop && poll > 0.7 {
                 eternal = meta.eternal_compat;
-            } else if self.modifiers.enable_perishables_in_shop && poll > 0.4 && poll <= 0.7 {
-                if meta.perishable_compat {
-                    perishable = true;
-                    perish_tally = crate::config::PERISHABLE_ROUNDS;
-                }
+            } else if self.modifiers.enable_perishables_in_shop
+                && poll > 0.4
+                && poll <= 0.7
+                && meta.perishable_compat
+            {
+                perishable = true;
+                perish_tally = crate::config::PERISHABLE_ROUNDS;
             }
             if self.modifiers.enable_rentals_in_shop {
                 let key = match area {
@@ -2037,7 +2039,7 @@ impl Run {
         if pack.hand_dealt {
             // draw_from_hand_to_deck (state_events.lua:1121-1126): each hand
             // card emplaces at deck index 1 (the bottom), front-to-back.
-            let cards: Vec<Card> = self.hand.drain(..).collect();
+            let cards = std::mem::take(&mut self.hand);
             for card in cards {
                 self.deck.insert(0, card);
             }

@@ -83,7 +83,7 @@ pub fn build_deck(deck: Deck, rng: &mut RngState) -> Vec<Card> {
 
     // `no_faces` filter (game.lua:2337), before the sort.
     if deck == Deck::Abandoned {
-        protos.retain(|(_, r)| !matches!(r.0, 11 | 12 | 13));
+        protos.retain(|(_, r)| !matches!(r.0, 11..=13));
     }
 
     // `table.sort` by `s..r` (game.lua:2349-2351). Ties are only possible
@@ -187,7 +187,7 @@ mod tests {
     fn abandoned_drops_the_face_cards() {
         let cards = build(Deck::Abandoned);
         assert_eq!(cards.len(), 40, "52 - 12 face cards");
-        assert!(cards.iter().all(|c| !matches!(c.rank.0, 11 | 12 | 13)));
+        assert!(cards.iter().all(|c| !matches!(c.rank.0, 11..=13)));
         // sort_ids renumber over what survives, contiguous from 1.
         let ids: Vec<u32> = cards.iter().map(|c| c.sort_id).collect();
         assert_eq!(ids, (1..=40).collect::<Vec<_>>());

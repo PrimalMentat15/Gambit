@@ -212,7 +212,7 @@ fn only_gold_stake_draws_the_rental_stream() {
     // etper poll on every stake, so only their APPLICATION differs, never the
     // stream position.)
     let ids = |stake: Stake| -> Vec<JokerId> {
-        let mut run = run_to_shop(RunConfig::new(Deck::Red, stake), "STREAM07");
+        let run = run_to_shop(RunConfig::new(Deck::Red, stake), "STREAM07");
         run.shop()
             .unwrap()
             .jokers

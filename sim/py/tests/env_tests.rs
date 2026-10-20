@@ -187,7 +187,7 @@ fn soak_one(seed: i64, steps: usize, check: bool) -> (u64, u64) {
         }
         let row = random_masked_action(&slot.masks, &mut rng);
         let (_r, done, info) = slot
-            .step(0, &row, 1.0, true)
+            .step(0, &row, 1.0, 0.0, true)
             .unwrap_or_else(|e| panic!("step {step}: {e}"));
         if done {
             episodes += 1;
@@ -232,7 +232,7 @@ fn determinism_bitexact() {
         let mut hash = Vec::new();
         for _ in 0..3000 {
             let row = random_masked_action(&slot.masks, &mut rng);
-            let (r, done, _) = slot.step(0, &row, 1.0, true).unwrap();
+            let (r, done, _) = slot.step(0, &row, 1.0, 0.0, true).unwrap();
             hash.extend_from_slice(&r.to_le_bytes());
             hash.push(done as u8);
             let o = slot.observe();
@@ -258,7 +258,7 @@ fn snapshot_restore_roundtrip() {
     let mut rng = Rng(99);
     for _ in 0..500 {
         let row = random_masked_action(&slot.masks, &mut rng);
-        slot.step(0, &row, 1.0, true).unwrap();
+        slot.step(0, &row, 1.0, 0.0, true).unwrap();
     }
     let snap = slot.snapshot_bytes();
 
@@ -271,7 +271,7 @@ fn snapshot_restore_roundtrip() {
         let mut hash = Vec::new();
         for _ in 0..300 {
             let row = random_masked_action(&s2.masks, &mut rng);
-            let (r, done, _) = s2.step(0, &row, 1.0, true).unwrap();
+            let (r, done, _) = s2.step(0, &row, 1.0, 0.0, true).unwrap();
             hash.extend_from_slice(&r.to_le_bytes());
             hash.push(done as u8);
             for x in s2.observe().global {
@@ -296,7 +296,7 @@ fn redeterminize_keeps_observables() {
     let mut rng = Rng(5);
     for _ in 0..200 {
         let row = random_masked_action(&slot.masks, &mut rng);
-        slot.step(0, &row, 1.0, true).unwrap();
+        slot.step(0, &row, 1.0, 0.0, true).unwrap();
     }
     let before = slot.observe();
     let masks_before = slot.masks;
@@ -345,7 +345,9 @@ fn bot_plays_legally_and_finishes_episodes() {
         let mut slot = EnvSlot::new(seed);
         for _ in 0..3000 {
             let row = balatro_sim::bot::bot_action(&slot.run, &slot.masks, &slot.shop_slots);
-            let (_r, done, info) = slot.step(0, &row, 1.0, true).expect("bot action rejected");
+            let (_r, done, info) = slot
+                .step(0, &row, 1.0, 0.0, true)
+                .expect("bot action rejected");
             if done {
                 episodes += 1;
                 assert!(info.unwrap().ante >= 1);
@@ -366,7 +368,9 @@ fn win_ante_curriculum_ends_episodes_early() {
         for _ in 0..2000 {
             assert!(slot.run.ante() <= 2, "episode outlived win_ante 1");
             let row = balatro_sim::bot::bot_action(&slot.run, &slot.masks, &slot.shop_slots);
-            let (_r, done, info) = slot.step(0, &row, 1.0, true).expect("bot action rejected");
+            let (_r, done, info) = slot
+                .step(0, &row, 1.0, 0.0, true)
+                .expect("bot action rejected");
             if done {
                 episodes += 1;
                 let ep = info.unwrap();
@@ -392,7 +396,7 @@ fn set_win_ante_applies_at_next_reset() {
     // Drive to the end of the current episode; the next one uses 1.
     for step in 0..200_000 {
         let row = random_masked_action(&slot.masks, &mut rng);
-        let (_r, done, _) = slot.step(0, &row, 1.0, true).unwrap();
+        let (_r, done, _) = slot.step(0, &row, 1.0, 0.0, true).unwrap();
         if done {
             break;
         }
@@ -420,7 +424,7 @@ fn harvest_snapshot(seed: i64, ante: i64) -> Option<(u8, Vec<u8>)> {
             return Some((ante as u8, slot.snapshot_bytes()));
         }
         let row = balatro_sim::bot::bot_action(&slot.run, &slot.masks, &slot.shop_slots);
-        let (_r, done, _) = slot.step(0, &row, 1.0, true).unwrap();
+        let (_r, done, _) = slot.step(0, &row, 1.0, 0.0, true).unwrap();
         if done {
             return None; // bot lost (or won) before reaching the target
         }
@@ -494,6 +498,7 @@ fn snapshot_mixing_fraction_1_starts_from_pool_and_is_deterministic() {
                     0,
                     &row,
                     1.0,
+                    0.0,
                     true,
                     Some(&pool),
                     fraction,
@@ -543,7 +548,7 @@ fn snapshot_mixing_fraction_1_starts_from_pool_and_is_deterministic() {
         let mut hash = Vec::new();
         for _ in 0..6000 {
             let row = random_masked_action(&slot.masks, &mut rng);
-            let (r, done, _) = slot.step(0, &row, 1.0, true).unwrap();
+            let (r, done, _) = slot.step(0, &row, 1.0, 0.0, true).unwrap();
             hash.extend_from_slice(&r.to_le_bytes());
             hash.push(done as u8);
             for x in slot.observe().global {
@@ -567,7 +572,16 @@ fn snapshot_mixing_respects_win_ante_and_redeterminizes() {
     for _ in 0..6000 {
         let row = random_masked_action(&slot.masks, &mut rng);
         let (_r, done, info) = slot
-            .step_with_pool(0, &row, 1.0, true, Some(&pool), 1.0, &ConfigDist::default())
+            .step_with_pool(
+                0,
+                &row,
+                1.0,
+                0.0,
+                true,
+                Some(&pool),
+                1.0,
+                &ConfigDist::default(),
+            )
             .unwrap();
         if done {
             episodes += 1;
@@ -588,7 +602,16 @@ fn snapshot_mixing_respects_win_ante_and_redeterminizes() {
         for _ in 0..8000 {
             let row = random_masked_action(&slot.masks, &mut rng);
             let (_r, done, info) = slot
-                .step_with_pool(0, &row, 1.0, true, Some(&pool), 1.0, &ConfigDist::default())
+                .step_with_pool(
+                    0,
+                    &row,
+                    1.0,
+                    0.0,
+                    true,
+                    Some(&pool),
+                    1.0,
+                    &ConfigDist::default(),
+                )
                 .unwrap();
             if done {
                 let ep = info.unwrap();
@@ -643,7 +666,7 @@ fn aura_and_every_usable_consumable_legalizes() {
         shop_target: -1,
         pack_target: -1,
     };
-    slot.step(0, &row, 1.0, true).unwrap();
+    slot.step(0, &row, 1.0, 0.0, true).unwrap();
     assert!(slot.run.consumables().iter().all(|c| c.key != "c_aura"));
     assert!(slot
         .run
@@ -673,7 +696,7 @@ fn aura_and_every_usable_consumable_legalizes() {
             }
         }
         let row = random_masked_action(&slot.masks, &mut rng);
-        slot.step(0, &row, 1.0, true).unwrap();
+        slot.step(0, &row, 1.0, 0.0, true).unwrap();
     }
 }
 
