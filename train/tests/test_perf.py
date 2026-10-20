@@ -21,7 +21,7 @@ from balatro_train.buffer import RolloutBuffer
 from balatro_train.config import load_config
 from balatro_train.policy import BalatroPolicy, obs_to_torch
 from balatro_train.ppo import PPOTrainer
-from tests.conftest import SMALL_POLICY, rollout_states
+from conftest import SMALL_POLICY, rollout_states
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 

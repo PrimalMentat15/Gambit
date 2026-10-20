@@ -75,6 +75,22 @@ class PPOConfig:
     max_grad_norm: float = 0.5
     norm_adv: bool = True         # per-batch advantage normalization
     norm_ret: bool = True         # running return normalization (reward scaling)
+    #: Early-stop an update once a minibatch's approximate KL (rollout policy
+    #: vs current weights, measured before that minibatch's step) exceeds this:
+    #: the remaining minibatch steps of the iteration are skipped. None = off.
+    target_kl: float | None = None
+    #: Divergence abort: if an iteration's MEAN approximate KL (over its
+    #: minibatches) exceeds this, training stops WITHOUT saving a checkpoint, so
+    #: the last periodic one stays the restart point. The mean, not the
+    #: per-minibatch max: the KL estimator is heavy-tailed, and one rare action
+    #: sampled at tiny probability can spike a single minibatch past 0.1 on a
+    #: healthy policy. None = off. Non-finite losses and negative entropy abort
+    #: regardless of this setting.
+    kl_ceiling: float | None = None
+    #: Divergence abort: stop WITHOUT saving when target_kl early-stops this many
+    #: iterations in a row. Isolated early stops are estimator outliers; a streak
+    #: means the policy can no longer take a normal update. None = off.
+    kl_stop_streak: int | None = None
 
 
 @dataclass

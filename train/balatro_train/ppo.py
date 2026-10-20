@@ -16,6 +16,7 @@ Key properties (see project plan):
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import time
 from collections import deque
@@ -94,6 +95,26 @@ def shaping_beta_at(step: int, cfg: ShapingConfig) -> float:
     return float(cfg.beta + t * (a.final_beta - cfg.beta))
 
 
+class TrainingDiverged(RuntimeError):
+    """Raised when an update leaves the policy numerically broken or moved too
+    far. Training stops without saving, so the last periodic checkpoint stays
+    the restart point."""
+
+
+def divergence_reason(stats: dict, kl_ceiling: float | None) -> str | None:
+    """Why this iteration's update counts as divergent, or None if healthy."""
+    for key in ("loss", "pg_loss", "v_loss", "entropy", "approx_kl", "approx_kl_max"):
+        if not math.isfinite(stats[key]):
+            return f"non-finite {key} ({stats[key]})"
+    # Entropy is a sum of non-negative per-head entropies; a tolerance absorbs
+    # rounding, anything clearly negative means the distribution is garbage.
+    if stats["entropy"] < -1e-3:
+        return f"negative entropy ({stats['entropy']:.4f})"
+    if kl_ceiling is not None and stats["approx_kl"] > kl_ceiling:
+        return f"mean approx_kl {stats['approx_kl']:.4f} > kl_ceiling {kl_ceiling}"
+    return None
+
+
 class PPOTrainer:
     def __init__(self, cfg: TrainConfig):
         self.cfg = cfg
@@ -144,6 +165,8 @@ class PPOTrainer:
 
         self.global_step = 0
         self.iteration = 0
+        self.last_checkpoint: Path | None = None
+        self._kl_stop_streak = 0
         self.ep_returns: deque[float] = deque(maxlen=100)
         self.ep_lengths: deque[float] = deque(maxlen=100)
         self.ep_antes: deque[float] = deque(maxlen=100)
@@ -529,6 +552,8 @@ class PPOTrainer:
 
         stats_t = {k: [] for k in
                    ("loss", "pg_loss", "v_loss", "entropy", "approx_kl", "clipfrac")}
+        steps = 0
+        early_stop = False
         for _ in range(cfg.update_epochs):
             for mb in self.buffer.minibatches(cfg.minibatch_size):
                 # bf16_update: autocast covers the policy recompute only; the
@@ -543,6 +568,14 @@ class PPOTrainer:
                 new_value = new_value.float()
                 logratio = new_logprob - mb["logprobs"]
                 ratio = logratio.exp()
+                with torch.no_grad():
+                    approx_kl = ((ratio - 1) - logratio).mean()
+                stats_t["approx_kl"].append(approx_kl)
+                # The .item() sync only happens when the guard is on, so the
+                # default path keeps its deferred-sync throughput.
+                if cfg.target_kl is not None and approx_kl.item() > cfg.target_kl:
+                    early_stop = True
+                    break
 
                 adv = mb["advantages"]
                 if cfg.norm_adv:
@@ -560,6 +593,7 @@ class PPOTrainer:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.policy.parameters(), cfg.max_grad_norm)
                 self.optimizer.step()
+                steps += 1
 
                 # Defer the .item() syncs to the end of the update: keep the
                 # scalars as 0-d tensors here (values are identical).
@@ -568,11 +602,24 @@ class PPOTrainer:
                     stats_t["pg_loss"].append(pg_loss.detach())
                     stats_t["v_loss"].append(v_loss.detach())
                     stats_t["entropy"].append(ent.detach())
-                    stats_t["approx_kl"].append(((ratio - 1) - logratio).mean())
                     stats_t["clipfrac"].append(
                         ((ratio - 1.0).abs() > cfg.clip_coef).float().mean()
                     )
-        out = {k: float(np.mean([t.item() for t in v])) for k, v in stats_t.items()}
+            if early_stop:
+                break
+        # approx_kl includes the minibatch that tripped target_kl (its drift was
+        # measured even though no step was taken); the other stats cover the
+        # steps actually applied. An update stopped before any step has no loss.
+        out = {k: float(np.mean([t.item() for t in v])) if v else float("nan")
+               for k, v in stats_t.items()}
+        out["approx_kl_max"] = float(max(t.item() for t in stats_t["approx_kl"]))
+        # First minibatch, before any step: the weights still ARE the rollout
+        # policy, so this is pure rollout-vs-update forward mismatch (eager bf16
+        # ~1e-6). A large value means the two passes disagree, not that the
+        # optimizer moved too far.
+        out["approx_kl_pre"] = float(stats_t["approx_kl"][0].item())
+        out["update_steps"] = steps
+        out["kl_early_stop"] = 1.0 if early_stop else 0.0
         out["lr"] = lr
         out["ent_coef"] = ent_coef
         return out
@@ -581,7 +628,6 @@ class PPOTrainer:
 
     def train(self, total_timesteps: int | None = None) -> list[dict]:
         total = total_timesteps or self.cfg.ppo.total_timesteps
-        batch = self.cfg.env.num_envs * self.cfg.ppo.rollout_len
         start = time.time()
         # Steps completed BEFORE this process started, i.e. whatever --resume
         # restored. Throughput must be measured against work this session
@@ -665,6 +711,32 @@ class PPOTrainer:
             # Kept out of `stats` so the history/TensorBoard path stays scalars.
             emit(EventType.ROLLOUT, **stats,
                  action_counts=self.action_counts.tolist())
+            # Before the evals and the periodic save: a broken update must never
+            # be written to disk, and evaluating it would only waste the session.
+            reason = divergence_reason(stats, self.cfg.ppo.kl_ceiling)
+            self._kl_stop_streak = self._kl_stop_streak + 1 if stats["kl_early_stop"] else 0
+            streak_limit = self.cfg.ppo.kl_stop_streak
+            if not reason and streak_limit and self._kl_stop_streak >= streak_limit:
+                reason = f"target_kl early-stopped {self._kl_stop_streak} iterations in a row"
+            if reason:
+                msg = (f"[diverged] step {self.global_step:,} iter {self.iteration}: "
+                       f"{reason} -- stopped WITHOUT saving; resume from "
+                       f"{self.last_checkpoint or 'the previous checkpoint'}")
+                print(msg, flush=True)
+                emit(
+                    EventType.SESSION_END,
+                    step=self.global_step,
+                    iteration=self.iteration,
+                    status="diverged",
+                    reason=reason,
+                    final_checkpoint=str(self.last_checkpoint or ""),
+                    elapsed=time.time() - start,
+                )
+                self.session.mark_finished("diverged")
+                close_emitter()
+                if self.writer:
+                    self.writer.close()
+                raise TrainingDiverged(msg)
             if self.cfg.curriculum.enabled:
                 self._curriculum_step()
             if (
@@ -709,10 +781,13 @@ class PPOTrainer:
             if "win_ante" in stats:
                 parts.append(f"goal {stats['win_ante']}")
             parts += [f"loss {stats['loss']:7.4f}", f"ent {stats['entropy']:6.3f}",
-                      f"kl {stats['approx_kl']:7.5f}"]
+                      f"kl {stats['approx_kl']:7.5f}", f"kl0 {stats['approx_kl_pre']:.1e}"]
+            if stats.get("kl_early_stop"):
+                parts.append(f"kl_stop@{stats['update_steps']} (max {stats['approx_kl_max']:.4f})")
             print("  ".join(parts), flush=True)
         if self.writer:
             for key in ("loss", "pg_loss", "v_loss", "entropy", "approx_kl",
+                        "approx_kl_max", "approx_kl_pre", "update_steps", "kl_early_stop",
                         "clipfrac", "lr"):
                 self.writer.add_scalar(f"losses/{key}", stats[key], self.global_step)
             for key in ("ep_return_mean", "ep_length_mean", "ep_ante_mean",
@@ -958,6 +1033,8 @@ class PPOTrainer:
             path=str(path),
             win_ante=self.win_ante,
         )
+        self.last_checkpoint = path
+        print(f"[ckpt] saved {path} (step {self.global_step:,})", flush=True)
         return path
 
     def load_checkpoint(self, path: str | Path) -> None:
@@ -968,6 +1045,7 @@ class PPOTrainer:
         ckpt = torch.load(path, map_location=self.device, weights_only=False)
         self.policy.load_state_dict(ckpt["policy"])
         self.optimizer.load_state_dict(ckpt["optimizer"])
+        self.last_checkpoint = Path(path)
         if self.ret_norm and ckpt["ret_norm"] is not None:
             self.ret_norm.load_state_dict(ckpt["ret_norm"])
         self.global_step = ckpt["global_step"]
