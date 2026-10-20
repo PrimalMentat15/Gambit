@@ -79,6 +79,8 @@ balatro-source-code/
 # ...but the app icon is a real asset and must be committed
 !assets/*.png
 !assets/*.ico
+!assets/readme/*.png
+!assets/readme/*.jpg
 .monitor_layout.json
 .monitor_layout_*.json
 monitor.json
