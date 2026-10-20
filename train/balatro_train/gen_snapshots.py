@@ -24,11 +24,9 @@ Usage (from train/):
 from __future__ import annotations
 
 import argparse
-import json
 import time
 from datetime import datetime, timezone
 
-import numpy as np
 
 from balatro_train import snapshot_pool
 

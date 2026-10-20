@@ -297,11 +297,10 @@ def test_render(run_dir=None, out_path="monitor_preview.png"):
         for _ in range(3):
             app.processEvents()
         path = f"{stem}_{name}{ext}"
-        window.grab().save(path)
+        assert window.grab().save(path), f"screenshot not written: {path}"
         print(f"screenshot: {path}")
 
     window.tabs.setCurrentIndex(0)
-    return out_path
 
 
 def _synthetic():

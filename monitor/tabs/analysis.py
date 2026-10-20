@@ -8,10 +8,8 @@ Reads TensorBoard event files directly, so there is no separate server to start
 and no second window to switch to.
 """
 
-import os
 from typing import Dict, List
 
-import pyqtgraph as pg
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 from PySide6.QtWidgets import (
     QComboBox, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget,

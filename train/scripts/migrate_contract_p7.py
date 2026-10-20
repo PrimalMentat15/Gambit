@@ -34,7 +34,6 @@ import torch
 import balatro_train.encoding as E
 import balatro_train.policy as policy_mod
 from balatro_train.config import PolicyConfig
-from balatro_train.policy import BalatroPolicy
 
 #: (state-dict key, old input width, new input width). Bias is unaffected.
 PRE_P7_JOKER_FEAT = 11

@@ -21,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 
 from balatro_train import encoding as E  # noqa: E402
 from balatro_train.sim_env import SimBalatroEnv  # noqa: E402
-from conftest import random_legal_actions  # noqa: E402
 
 
 def vectorized_random_actions(rng, masks):

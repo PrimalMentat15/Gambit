@@ -15,7 +15,7 @@ Three properties keep the monitor from competing with training for resources:
 
 import os
 import sys
-from typing import List, Optional
+from typing import List
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence

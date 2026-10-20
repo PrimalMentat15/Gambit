@@ -8,7 +8,6 @@ sim env (the curriculum only means anything there) with a tiny policy and a
 handful of iterations, on CPU.
 """
 
-import numpy as np
 import pytest
 
 from balatro_train.config import (

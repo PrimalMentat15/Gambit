@@ -16,7 +16,7 @@ Two rules make the dashboard cheap to run:
 from collections import deque
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
-from PySide6.QtCore import QObject, Qt
+from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from .. import theme

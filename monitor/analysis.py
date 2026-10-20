@@ -11,7 +11,7 @@ the same window as the live view.
 
 import os
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from balatro_train.tools.reader import read_events
 

@@ -1,6 +1,5 @@
 """Entropy decomposition: joint = sum of conditional (per-sub-step) entropies."""
 
-import numpy as np
 import torch
 
 from balatro_train import encoding as E

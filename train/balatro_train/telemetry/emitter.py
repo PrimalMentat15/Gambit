@@ -18,9 +18,9 @@ import json
 import queue
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
-from .events import EventType, make_event
+from .events import make_event
 
 # Sentinel telling the writer thread to drain and exit
 _SHUTDOWN = object()
