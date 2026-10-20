@@ -1505,3 +1505,107 @@ fixed eval either. **m9b** restarts the same lever configuration from the
 corrected, trustworthy `evaluate()` from the start -- see
 `train/configs/m9b.yaml` and the m8->m9->m9b write-up for what that data
 does and does not show at the point m9b was last checked.
+
+---
+
+## M10: reward shaping does not fix the hard decks
+
+**Decision:** keep shaping `beta` at 0.1; stop tuning the reward for Black/Painted/Plasma.
+
+**What was tried.** m10 resumed m9b at 1.04B with `beta` 0.1 -> 0.25 (and `cash_beta` off) to
+give Black a stronger "clear the blind" signal. After 280M steps Black read 31% against 36%
+before and the deck mean 58.3% against 59.7% -- within about two standard errors at 512
+episodes per deck, and clearly no gain.
+
+**Why it could not work.** The per-hand progress term is `beta * delta min(chips/req, 1)`:
+capped at "blind cleared", so a larger `beta` pays more for behaviour the policy already
+shows. It never rewarded *surviving* the early game, which is what Black lacked.
+
+**What the failure actually is.** A per-deck failure-mode probe (ante at which each run ends)
+split the hard decks in two. Black loses ~half of its runs at **ante 1**: the policy plays the
+same loose, discard-heavy early game on every deck, and with three hands and no jokers the
+strong hand often does not arrive in time. Painted and Plasma survive the early game and fall
+short at antes 5-8 (fewer joker slots / doubled blind requirement). Live crossval on 15 Black
+and 4 Plasma seeds found **zero** sim/game divergences, so these are policy weaknesses, not
+simulator bugs. Every reward and curriculum knob had now plateaued at the same ~59% on the
+same 1.13M policy, which pointed at capacity.
+
+## M11: capacity, and re-bootstrapping a policy from scratch
+
+**Decision:** grow the policy to d_model 192 / 4 layers / 6 heads (2.86M params, up from
+1.13M) and train it from scratch with the *original* bootstrap recipe, Red/White first.
+
+**The bootstrap recipe was hidden in the resume chain.** m6..m10 configs read `beta: 0.1`
+and `start_ante: 8`, which looks like a from-scratch recipe but is not: every one of those
+runs resumed a policy that m1->m5 had already bootstrapped with `beta` 1.0 annealed to 0.1
+(500M-900M) and the ante ladder 1->2->3->5->8. A fresh network needs that recipe. m11 uses
+it, plus Red/White only (`deck_curriculum.enabled: false`) until the ante-8 rung is reached,
+because one competent base policy is cheaper to grow than fifteen at once.
+
+**Result.** The ante-8 rung came at 153M steps against 854M for the small model, and 64.8%
+at 0.64B; 63.7% greedy on fresh seeds at 0.70B. Applied zero-shot to the other 14 decks it
+averaged 52.4% (55.1% on the training block), and the whole shortfall against the trained
+small mixture was Black, Painted and Plasma -- the decks whose rules a Red-only policy cannot
+learn. Throughput on the 6 GB card was ~500 steps/s, so 0.7B steps took 24 days.
+
+**Two eval fixes found along the way.**
+- *Timeouts filed as ante 0.* `evaluate()` recorded a capped (>1000-step) episode as ante 0,
+  indistinguishable from a real ante-0 death (Hieroglyph/Petroglyph call `ease_ante(-1)`),
+  and dragged `ante_mean` down ~0.5. Timeouts are now a separate `timeouts` count, still
+  losses for `win_rate`, excluded from `ante_hist`/`ante_mean`.
+- *`per_slot > 1` breaks the straggler cap.* With `episodes > eval_num_envs`, a capped slot
+  that still owes episodes waits out its pathological run inside the env -- promotion evals
+  cost 1,400-2,600 s. Every live config now keeps `episodes <= eval_num_envs`.
+
+## M12: the deck mixture on a free cloud GPU -- compile, guards, and the best result
+
+**Decision:** train m12 (m11's policy, all 15 decks, resumed from m11b at 734M) on Kaggle's
+RTX PRO 6000, eager mode (`compile: false`), lr 3e-5 with minibatch 32,768, and KL update
+guards (`target_kl` 0.03, `kl_ceiling` 0.1 on the *mean*, `kl_stop_streak` 5).
+
+**Hardware.** Kaggle's free tier offers an RTX PRO 6000 Blackwell (96 GB) with 46 usable
+cores (cgroup quota) and 30 GPU-hours a week in 12-hour sessions. The 2.86M policy trains at
+~27,500 steps/s there, ~55x the laptop. A rollout-only benchmark ran ~150k steps/s with the
+Rust env only 25-32% of the time, and 4,096 -> 16,384 envs gained 4%: the rollout is
+GPU-bound, so `num_envs` stayed 4,096. Sessions set up offline in ~10 s from a private
+dataset (source snapshot + prebuilt abi3 `balatro_sim` wheel keyed by a hash of `sim/` +
+resume checkpoint); see `train/kaggle/`.
+
+**Two diverged sessions, one cause: `torch.compile`.** The first session (lr 5e-5) sat at
+KL ~0.012, then went 0.015 -> 0.056 -> 3.49 and destroyed the weights (negative entropy).
+At lr 3e-5 KL fell to ~0.0015 but the second session failed at almost the same iteration,
+which ruled out step size. The tell was `kl_stop@0`: KL 0.038 on the *first* minibatch,
+before any optimizer step, when the weights still are the rollout policy. With no optimizer
+step at all, recomputing the rollout's own log-probs on the m11b weights gave KL0 ~1e-4 and
+single samples at |log r| = 0.37 (ratio 1.45, outside the clip range) compiled, against
+~2e-6 and <= 0.06 eager. The compiled no-grad rollout graph and the compiled grad update
+graph compute different bf16 probabilities; the biased ratios compound until collapse.
+Evals (the first suspect, because both collapses followed one) changed nothing. Eager m12:
+KL0 below 3e-7 for 2,800 iterations. `approx_kl_pre` (`kl0` in the log) is now emitted
+every iteration -- it is the one number that separates a rollout/update mismatch from drift.
+
+**The guards' own false alarm.** The first abort rule read the *largest* minibatch KL and
+stopped healthy session 2 at 2.218B, right after its best evaluation, on one minibatch at
+0.116 while the other 31 read ~0.003 and KL0 was zero. The k3 estimator `(r-1) - log r` is
+heavy-tailed: one rare action the updated policy now prefers produces a large `r`. Across
+~2,800 iterations all five such spikes (0.031-0.116) were isolated. The ceiling now reads
+the iteration's **mean** KL, and `kl_stop_streak` catches the real failure pattern (the
+compiled collapse early-stopped every iteration from 1442). Replayed over every logged
+iteration: no abort on the healthy sessions, the compiled collapse stopped at 1446, eight
+iterations before its NaN. A diverged update is never written to disk; the message names the
+checkpoint to resume from.
+
+**Operational lessons.** Kaggle background runs publish `/kaggle/working` only when they end,
+so the notebook writes the STOP file at 11 h and the trainer saves a final checkpoint before
+the 12 h kill; a forgotten resume input fails in seconds (`FIRST_SESSION`) instead of
+silently retraining from the seed. Kaggle's file server returned HTTP 502 pages that `kaggle
+kernels output` saved *as* the checkpoint files; `train/kaggle/fetch_outputs.py` fetches only
+the run directory and rejects anything that is not a valid archive. The two sessions'
+`events.jsonl` are stitched at the 2.202B resume point; the aborted session's dead branch is
+kept separately so the stream has no duplicate steps.
+
+**Result (best of the project).** Over 1.47B steps the logged 15-deck mean rose from 61.2%
+(0.8B) to **78.5%** (2.2B) and Red to 82.3%, with every deck improving: Blue 91%, Black 55%,
+Painted 69%, Plasma 71% -- 20, 30 and 28 points above the best 1.13M mixture on the three
+hard decks. The curve was still rising. Capacity, not reward or curriculum tuning, broke the
+~59% plateau. Best checkpoint: `train/runs/m12/ckpt_2202009600.pt`.

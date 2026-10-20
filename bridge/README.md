@@ -221,7 +221,7 @@ Terminal 2 — run the demo:
 
 ```bash
 cd bridge
-balatro-bridge-demo --ckpt ../train/runs/cloud_mirror/m5e2/ckpt_4000317440.pt
+balatro-bridge-demo --ckpt ../train/runs/m12/ckpt_2202009600.pt
 ```
 
 The policy (argmax) picks every action from the Rust sim's encoded state and
@@ -230,7 +230,7 @@ game after every action (P5 machinery), so the demo doubles as deep
 cross-validation — divergences are reported but don't stop the run. With no
 `--seed` it first pre-screens random seeds in the sim (~1s each) and plays
 one the policy wins, so the audience gets a full ante-1→8 victory; the
-certified policy wins ~71% of unscreened seeds. Same policy path exists in
+best policy (m12) wins ~82% of unscreened Red-Deck seeds in the sim. Same policy path exists in
 the harness proper: `balatro-crossval --policy ckpt --ckpt <pt>`.
 
 Timing note: cash-outs deliberately pause ~2–8s — pressing balatrobot's
@@ -247,7 +247,7 @@ a green **BOT RUN** button to the main menu. Cycle the pickers to any of the
 **random-seed** run of exactly that deck/stake:
 
 ```bash
-balatro-bridge-autoplay --ckpt ../train/runs/m9b
+balatro-bridge-autoplay --ckpt ../train/runs/m12
 ```
 
 `--ckpt` accepts either a checkpoint file or a **run directory** (resolves to

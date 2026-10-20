@@ -250,7 +250,7 @@ pytest
 | toggle | what | numerics |
 |---|---|---|
 | `perf.bf16_update` | bf16 autocast for the update forward/backward (fp32 master weights, fp32 losses; logprobs stay fp32 via autocast's fp32 logsumexp). Attention already runs fused SDPA (mem-efficient backend) on torch 2.13 even in fp32 — bf16 halves the gemm/elementwise cost and the activation VRAM. | reduced precision |
-| `perf.compile` | `torch.compile` on `policy._forward` (rollout + update + eval shapes each specialize once; `dynamic=False` — all shapes here are static, incl. the 5 GRU card sub-steps). **Needs Triton**; no official Windows build exists, `pip install triton-windows` is a working unofficial one. Without it, `compile: true` raises `torch._inductor.exc.TritonMissing` and crashes rather than falling back to eager. Measured worth only **~5%** on a 6GB RTX 4050 (610 → 639 steps/s) and cost ~10 min of first-run compile warmup, so `m3_fast.yaml` ships it **off** — on this card `minibatch_size` dominates, not codegen. | codegen (validated) |
+| `perf.compile` | `torch.compile` on `policy._forward` (rollout + update + eval shapes each specialize once; `dynamic=False` — all shapes here are static, incl. the 5 GRU card sub-steps). **Needs Triton**; no official Windows build exists, `pip install triton-windows` is a working unofficial one. Without it, `compile: true` raises `torch._inductor.exc.TritonMissing` and crashes rather than falling back to eager. Measured worth only **~5%** on a 6GB RTX 4050 (610 → 639 steps/s) and cost ~10 min of first-run compile warmup, so `m3_fast.yaml` ships it **off** — on this card `minibatch_size` dominates, not codegen. **⚠️ Not numerically safe for the 2.86M policy:** the compiled no-grad rollout graph and grad update graph disagree in bf16 (rollout-vs-update KL ~1e-4 before any optimizer step vs ~2e-6 eager, single samples at ratio 1.45), which diverged both compiled m12 sessions — see "PPO update guards" and `DECISIONS.md` "M12". Keep it off; if you enable it, watch `kl0`. | codegen — **validated on 1.13M only** |
 | `perf.buffer_device` | `cpu` / `cuda` / `auto`. `cuda` keeps the rollout buffer GPU-resident: per-step stores are device-side copies queued **before** `env.step` (they overlap the Rust step), and minibatch fetch is a pure GPU gather instead of a per-epoch CPU-gather + H2D of the whole batch. `auto` picks cuda when the buffer fits next to the measured update peak. | bit-exact |
 | `perf.pin_memory` | pinned staging + `non_blocking` H2D for per-step obs/masks and (cpu-buffer) minibatch fetches (stage reuse is guarded by a CUDA event). | bit-exact |
 | `perf.auto_minibatch` | startup VRAM probe on a throwaway policy copy: halves `ppo.minibatch_size` until a worst-case synthetic fwd/bwd/Adam step fits (floor 1024). **⚠️ Makes `minibatch_size` portable, not fast.** It optimises for *fitting*, and the largest size that fits can be far from the fastest: on a 6GB RTX 4050 it chose 16384 (probe: 7,702 MiB peak, "fits") and ran at ~640 steps/s, where a hand-set 4096 ran at ~5,250 — an 8x difference, because 16384 leaves the card at ~5.8/6.1 GB and thrashes instead of cleanly OOMing. Prefer `auto_minibatch: false` plus a value tuned by measuring `charts/sps` on the target GPU; use the probe only as a first guess on unfamiliar hardware. | bit-exact (RNG untouched) |
@@ -280,6 +280,46 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
     --ckpt <ckpt-copy>.pt --iters 2 --warmup-iters 1 --no-sync
 ```
 
+## PPO update guards
+
+All off by default (existing configs are unchanged); `m12.yaml` turns them on.
+
+| config | what |
+|---|---|
+| `ppo.target_kl` | Approximate KL is measured on each minibatch **before** its step. Above this, the rest of the iteration's update is skipped; the log line shows `kl_stop@N (max …)` with the number of steps taken. |
+| `ppo.kl_ceiling` | Stop training **without saving** if the iteration's **mean** KL exceeds this. Not the max: the k3 estimator `(r-1) - log r` is heavy-tailed, and one rare action can push a single minibatch past 0.1 on a healthy policy. |
+| `ppo.kl_stop_streak` | Stop without saving when `target_kl` fires this many iterations in a row — the signature of a real collapse; isolated early stops are estimator noise. |
+
+Non-finite losses or negative entropy always stop training without saving. The message names the
+checkpoint to resume from (the last periodic save, or the one the run resumed from).
+
+Every iteration also logs `approx_kl_pre` (`kl0` in the log line): the KL of the first minibatch,
+measured with the rollout's own weights. It should be ~0 (eager bf16: ~1e-9). A large `kl0` means
+the rollout and update passes disagree — not that the optimizer moved too far — which is how the
+`torch.compile` mismatch was found.
+
+## Training on Kaggle
+
+m12 trained on Kaggle's free RTX PRO 6000 (96 GB, 46 cores, 30 GPU-hours/week, 12 h sessions)
+at ~27,500 steps/s. Ingredients:
+
+1. **A private dataset** with three things: a source snapshot of `sim/` + `train/` (`git archive`
+   of a tree built through a temporary index, so uncommitted fixes ride along and gitignored game
+   sources never do), the `balatro_sim` wheel built once on Kaggle and keyed by a hash of `sim/`,
+   and the resume checkpoint placed under `runs/m12/` so the notebook treats it as an m12
+   checkpoint. Kaggle auto-extracts `.tar.gz` uploads into folders.
+2. **The notebook** (`python kaggle/make_notebook.py out.ipynb`, pushed with
+   `kaggle kernels push`). Setup is offline and takes ~10 s: copy the source, install the cached
+   wheel (rebuilding with Rust only if `sim/` changed and Internet is on), put `train/` on the path.
+   `RUN_TRAINING = True` then runs `ppo.py` with cadence overrides for this GPU, writes `runs/m12/STOP`
+   after 11 h so the final checkpoint lands before the 12 h kill, refuses torch builds other than the
+   verified one, and refuses to start from the seed checkpoint unless `FIRST_SESSION = True`.
+3. **Pulling results**: `python kaggle/fetch_outputs.py <owner>/<kernel> runs/m12 m12`. Background
+   runs publish their output only when they end, so do not cancel one you want to keep.
+
+Use eager mode (`compile: false`) and keep `num_envs` at 4,096: the rollout is GPU-bound there
+(the Rust env is only 25-32% of rollout time), so 16,384 envs gained 4%.
+
 ## Layout
 
 | file | what |
@@ -287,7 +327,7 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
 | `balatro_train/encoding.py` | **Single source of truth**: obs/mask/action array specs, enums, feature index layouts. The Rust mirror (`sim/py/src/consts.rs`) must match it exactly — enforced by `tests/test_contract_migration.py::test_rust_mirror_matches_encoding`, which parses the `.rs` and needs no compiled binding, so it still catches drift while the installed module is stale. |
 | `balatro_train/env_api.py`  | `VecEnv` protocol + full contract doc (auto-reset, mask semantics, reward shaping scheme, β anneal hook) + env registry. |
 | `balatro_train/mock_env.py` | Pure-numpy fake env with correct mask semantics; strict action validator; `shaped` and `bandit` reward modes. |
-| `balatro_train/policy.py`   | Entity-token transformer (3×128 pre-LN), pointer heads, autoregressive card head w/ GRU, value head; exact −inf masking; one shared code path for sampling and PPO recompute. |
+| `balatro_train/policy.py`   | Entity-token transformer (3×128 pre-LN, 1.13M params; m11+: 4×192, 2.86M), pointer heads, autoregressive card head w/ GRU, value head; exact −inf masking; one shared code path for sampling and PPO recompute. |
 | `balatro_train/buffer.py`   | Rollout buffer (dict obs + stored masks + composite actions), GAE, running return normalizer. |
 | `balatro_train/ppo.py`      | Train loop (`python -m balatro_train.ppo`), TB logging, checkpointing (policy+optimizer+normalizer), `--resume`, snapshot-fraction anneal. |
 | `balatro_train/eval.py`     | Fixed-seed eval (`evaluate()`): equal episodes per env slot, argmax or stochastic. Used by the curriculum's promotion/milestone evals and the per-deck matrix — see "Decks, stakes, and the deck-mixture curriculum" for the counting-bias fix and its wall-clock cost. |
@@ -295,7 +335,9 @@ python scripts/bench_ppo.py --config configs/m3_fast.yaml \
 | `balatro_train/gen_snapshots.py` | Pool generation tool (bot and/or policy-checkpoint driven, stratified per-ante quotas). |
 | `balatro_train/telemetry/` | NDJSON event stream (`events.jsonl`) + `RunSession` (run directory, `meta.json`, stop file). Stdlib only. |
 | `balatro_train/tools/`     | `killrun` (graceful stop / force kill from the terminal), process helpers, event-stream reader. |
-| `configs/`                  | `debug.yaml` (tiny/CPU), `default.yaml` (plan hypers), `m1.yaml` (first real run), `m3.yaml` (m1 + snapshot mixing + resume), `m3_fast.yaml` (m3 + perf toggles; see "Throughput"). P7 deck-mixture: `m8.yaml` / `m8_cloud.yaml` (local 4050 / cloud 5090 tunings, decks off `runs/m8_seed.pt`), `m9.yaml` (m8 + the two reward levers — see `DECISIONS.md` "M9"), `m9b.yaml` (m9, restarted from `m8_seed` step 0 under the fixed `evaluate()` for trustworthy comparison data; inline `>>> TURN DOWN … if:` comments next to every parameter that can go wrong). |
+| `configs/`                  | `debug.yaml` (tiny/CPU), `default.yaml` (plan hypers), `m1.yaml` (first real run), `m3.yaml` (m1 + snapshot mixing + resume), `m3_fast.yaml` (m3 + perf toggles; see "Throughput"). P7 deck-mixture: `m8.yaml` / `m8_cloud.yaml` (local 4050 / cloud 5090 tunings, decks off `runs/m8_seed.pt`), `m9.yaml` (m8 + the two reward levers — see `DECISIONS.md` "M9"), `m9b.yaml` (m9, restarted from `m8_seed` step 0 under the fixed `evaluate()` for trustworthy comparison data; inline `>>> TURN DOWN … if:` comments next to every parameter that can go wrong), `m10.yaml` (m9b + `beta` 0.25; did not help — `DECISIONS.md` "M10"). Capacity: `m11.yaml` (2.86M policy from scratch, original bootstrap recipe, Red/White only), `m11b.yaml` (m11 + all 15 decks, local profile), `m12.yaml` (**best run**: m11b on a cloud GPU — minibatch 32,768, lr 3e-5, `compile: false`, KL guards). |
+| `kaggle/make_notebook.py` | Generates the Kaggle notebook that ran m12: offline setup from a private dataset, benchmark, guarded training with an 11 h STOP, automatic resume from the newest `runs/m12` checkpoint. See "Training on Kaggle". |
+| `kaggle/fetch_outputs.py` | Downloads one session's run directory with per-file retries, rejecting the HTTP 5xx pages the Kaggle CLI saves as if they were files. |
 | `scripts/bench_ppo.py`      | Wall-clock phase breakdown + torch.profiler bench of collect/update (supports `--set path=value` config overrides). |
 | `scripts/migrate_contract_p7.py` | One-shot checkpoint migration to the P7 observation contract: zero-pads the widened `joker_proj`/`shop_proj` inputs and remaps `slot_embed` for the raised slot caps. `--verify` asserts the migrated policy encodes pre-P7 states identically. Idempotent. |
 | `scripts/replay_failures.py` | Load a checkpoint and dump per-action traces for episodes matching a failure filter (`ante1-small`, `ante1-boss`, `any-loss`, `runaway`) -- the cards it selected and the chips each hand scored, plus a per-play control aggregate. Read-only; used to diagnose *what* the policy does in a failure mode, not just how often. |
